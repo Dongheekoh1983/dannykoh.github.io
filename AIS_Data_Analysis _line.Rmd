@@ -1,0 +1,580 @@
+---
+title:
+output:
+  html_document:
+    theme: journal
+    df_print: paged
+    code_folding: show
+  pdf_document: default
+---
+
+<style>
+.html-widget {
+    margin: auto;
+}
+</style>
+
+<style type="text/css">
+.main-container {
+  max-width: 1250px;
+  margin-left: auto;
+  margin-right: auto;
+  color: #082C6F;
+  font-family: Arial;
+  caption-side: bottom;
+}
+td, th {
+ text-align: left;
+ padding: 8px;
+}
+tr:nth-child(even) {
+ background-color: #dddddd;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+<br>
+
+# <span style="color:#072B6F; font-weight:bold; font-size: 40px;">MINING PATTERNS AND INSIGHTS FROM AIS DATA 2 - LINE DENSITY ANALYSIS</span>
+
+<br>
+
+## <span style="color: #7BB6B3; text-transform: uppercase;">Project Outline</span>
+
+<ul style = "color:#7BB6B3; font-size:20px">
+<li><a href="#line_density" style = "color: #7BB6B3"> Trajectory(line) Density Analysis</a>
+   <ul>  
+      <li><a href="#workflow2" style = "color: #7BB6B3"> Trajectory Density Analysis Workflow </li>
+      <li><a href="#processing" style = "color: #7BB6B3"> Data Pre-processing </li>
+      <li><a href="#points_to_paths" style = "color: #7BB6B3"> Points to Paths Analysis with Feature Blending Effects</li>
+      <li><a href="#detection"style = "color: #7BB6B3"> Radar/Sonar Detection Range Visualization </li>
+      <li><a href="#combining" style = "color: #7BB6B3"> Combining Trajectories and Points </li>
+      <li><a href="#traj_cluster" style = "color: #7BB6B3"> Trajectory Clustering Analysis</a>
+         <ul>  
+           <li><a href="#dbscan" style = "color: #7BB6B3"> DBSCAN Results </li>
+           <li><a href="#hdbscan" style = "color: #7BB6B3"> HDBSCAN Results </li>
+           <li><a href="#kmedoids"style = "color: #7BB6B3"> Kmedoid Results </li>
+        </ul>   
+   </ul>
+<li><a href="#summary" style = "color: #7BB6B3"> Project Summary</a>
+</ul>
+
+<br>
+
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+library(rgdal)
+library(dplyr)
+library(RSQLite)
+library(sf)
+library(ggplot2)
+library(ggblend)
+library(viridis)
+library(ggmap)
+library(gganimate)
+library(osmdata)
+library(RColorBrewer)
+library(ggpubr)
+library(patchwork)
+library(gganimate)
+library(tmap)
+library(units)
+library(gifski)
+library(DiagrammeR)
+library(tidyverse)
+library(rnaturalearth)
+library(RMariaDB)
+library(plotly)
+library(move)
+library(moveVis)
+library(mapview)
+library(Hmisc)
+
+setwd("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization")
+
+Dec_01_NEW_DATA <- read.csv("Dec_01_Cleaned.csv")
+```
+
+## <span><a id="line_density" style="color: #7BB6B3; text-transform: uppercase">Trajectory(line) Density Analysis</a></span>
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">All the preceding methods discussed fall under the heading of point pattern analysis. In contrast, the methods I am about to introduce in the following sections belongs to the realm of line pattern analysis. While we have covered a significant amount already, there is more ground to explore ahead! The diagram below neatly summarizes the methods used and the logical workflow employed for trajectory density analysis.</p> 
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">I will begin by discussing the detailed steps involved in pre-processing the original AIS data, an essential yet time-consuming process in any data science project. Following this, I will delve into 'points_to_paths' analysis and feature blending effects. I will then  briefly showcase the results of the radar/sonar detection range analysis. This analysis was initially included at the request of the Korean Navy to visualize the cumulative detection range changes during their operations. Additionally, I will demonstrate how to combine point and line layers to enhance map readability. Lastly, I will introduce trajectory clustering analysis ??? an effective method for summarizing line density patterns ??? along with its analysis results.</p>
+
+### <span><a id="workflow2" style="color: #7BB6B3;">Trajectory Density Analysis Workflow</a></span>
+```{r,out.width="100%"}
+DiagrammeR::grViz("               
+digraph surveillance_diagram {    # 'digraph' means 'directional graph', then the graph name 
+
+  # graph statement
+  
+  graph [layout = dot,
+         rankdir = LR,            # layout top-to-bottom
+         fontsize = 10]
+
+  # nodes (circles)
+  
+  node [shape = circle,           # shape = circle
+       fixedsize = true
+       width = 1.3]                      
+
+  # Main tree
+  Original  [label = 'Original\nPoint Data'] 
+  SplitMMSI [label = 'Split by\nMMSI']
+  OrderTime [label = 'Order by\ntimestamp']
+  Threshold [label = 'Ti+1 - Ti >\nThreshold\n(e.g.,5hours)',
+  shape=diamond, height=1.6, width=1.6, color=blue, fontcolor=blue]
+  Separate_lines [label = 'CreateSeparate\nlines', color=blue]
+  One_line [label = 'Create\ncontinuous line', color=blue, fontcolor=blue]
+  GIS [label = 'Merge\ninto\nGIS\nlinestring']
+  Line_Density [label =  'LineDensity\nVisualization',
+  shape=square, height = 1.6, width = 1.6, color = orange]
+  Detection_range [label = 'Randar\nDetection Range\nAnalysis', 
+  fontcolor = darkgreen, color=darkgreen, shape=square ]
+  Join_attribute [label = 'JoinBy\nattribute', 
+  fontcolor = black, color=black]
+  Feature_blending [label = 'Feature\nblending\neffects', 
+  fontcolor = darkgreen, color=darkgreen, shape = square]
+  Traj_Clus [label =  'Trajectory\nClustering\n\n-DBSCAN\n-HDBSCAN\n-Kmedoids',
+  shape=square, height = 1.6, width = 1.6, color = orange]
+  Vis_Type [label = 'Visualization\nbyType', 
+  shape=square, color=orange, fontcolor=orange]
+  Filtering [label = 'Filtering\nby users']
+  Overlay_point [label = 'Overlay\npointLayer']
+  Speed [label='Visualization\n by speed', 
+  shape=square, color=orange, fontcolor=orange]
+  Heading[label='Visualization\n by heading',
+  shape=square, color=orange, fontcolor=orange]
+
+  # edges
+  Original ->  SplitMMSI 
+  SplitMMSI -> OrderTime                      
+  OrderTime -> Threshold
+  Threshold -> Separate_lines[label = 'yes', fontcolor=red, style=dashed, color=blue]
+  Threshold -> One_line [label = 'no', fontcolor=red, style=dashed, color=blue]
+  {Separate_lines One_line} -> GIS[style=dashed, color=blue]  
+  GIS -> {Line_Density Traj_Clus}
+  Line_Density -> {Detection_range Join_attribute Feature_blending} [style=dashed,
+  color=darkgreen]
+  Join_attribute -> {Filtering Vis_Type}
+  Filtering -> Overlay_point
+  Overlay_point -> {Speed Heading} [style=dashed, color=orange]
+  Vis_Type -> {Speed Heading} [style=dashed, color=orange]
+  }
+")
+
+```
+
+### <span><a id="processing" style="color: #7BB6B3;">Data Pre-processing</a></span>
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px"> In data science, the importance of data cleaning cannot be overemphasized. I believe this is the single most important step in any data science project. Socrates' age-old wisdom, 'Know thyself,' can be rephrased as "know thy data" in the realm of data science. This fundamental principle is, however, often neglected by many practitioners. Undoubtedly, we all come to know our data better while tidying up a given dataset.</p>
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">The importance of data cleaning, I believe, increases in proportion to the size of your data. This is because an increasing volume of data could also increase the probability of noise. In our case, the dataset for December 1st alone has 1,440,914 rows and 24 columns, which amounts to 375MB of storage space. This could quickly add up to several hundred gigabytes or even terabytes of storage space, depending on the time and the spatial scale of your project. Just like gold mining involves the process of separating gold from soil or gravel, data mining involves removing unwanted noise from signals. The following steps and code describe a detailed data clean-up process employed to that end.</p>  
+
+<ol style = "color:#082C6F; font-size:20px;">
+<li>Select necessary columns for data visualization</li>
+<li>Create a "shiptype" column and assign new values based on existing field</li>
+<li>Creating a xy_coordinate field as a preliminary step to remove redundant coordinates</li>
+<li>Split the dataset into a large list using MMSI (a unique vessel identifier)</li>
+<li>Define a function called 'f_time' </li>
+<li>Apply the f_time function to a large list using 'lapply' to remove redundant timestamps </li>
+<li>Define a function called 'f_xy' </li>
+<li>Apply the f_xy function to a large list using 'lapply' to remove redundant coordinates </li>
+<li>Convert the large list back into a data.frame again </li>
+<li>Create HIGHER_TYPE field </li>
+<li>Create Radar and Sonar range fields</li>
+<li>Remove unnecessary "," from the SHIPNAME field</li>
+<li>Convert data.frame into data.table</li>
+<li>Cast TIMESTAMP field into POSIXTct </li>
+<li>Arrange data.table by MMSI and TIMESTAMP</li>
+<li>Compute time-lags within each MMSI</li>
+<li>Identify points where time lags exceed a pre-defined time threshold</li>
+<li>Use a cumulative sum function to assign new_ID within each MMSI</li>
+<li>Create MMSI_NEW field by combining MMSI and new_ID</li>
+<li>Remove vessels whose total number of points is less than a specified threshold</li>
+<li>Compare the dataset before and after the processing</li>
+</ol>
+
+
+```{r, echo=TRUE, eval=FALSE, message=FALSE, warning=FALSE}
+ais_data_cleaning <- function(df, threshold= 10,cutoff_mins=90  ,layer_name) {
+  
+  #extracting fields that are needed for visualization
+  large_data <- df %>% dplyr::select(ship_and_cargo_type, name, mmsi, timestamp, course, speed, longitude, latitude)
+  
+  #creating "shiptype" column
+  large_data <- large_data %>%
+    mutate(SHIPTYPE = case_when(ship_and_cargo_type == "70" | ship_and_cargo_type == "71" |
+                                ship_and_cargo_type == "79" ~ "Cargo",
+                                ship_and_cargo_type == "80" ~ "Tanker",
+                                ship_and_cargo_type == "52" ~ "Tug",
+                                ship_and_cargo_type == "30" ~ "Fishing",
+                                ship_and_cargo_type == "60" ~ "Passenger",
+                                ship_and_cargo_type == "50" ~ "Pilot",
+                                .default = "Other"))
+  
+  #creating a xy_coords field to delete duplicate coordinates
+  large_data <- large_data %>%
+    mutate(lon = round(longitude, 3),
+           lat = round(latitude, 3),
+           xy_combined = paste(as.character(lon), ", ",
+                               as.character(lat))) %>% dplyr::select(-c(lon, lat))
+  
+  
+  #split a dataset into a large list by mmsi
+  split <- split(large_data, large_data$mmsi)
+  
+  #a function that removes duplicate timestamps
+  f_time <- function(x) x[!duplicated(x[,c("timestamp")]),]
+  
+  #a function that removes duplicate cy_coords
+  f_xy <- function(x) x[!duplicated(x[,c("xy_combined")]),]
+  
+  #applying timestamp removing function
+  split <- lapply(split, f_time)
+  
+  #applying xy_coords removing function
+  split <- lapply(split, f_xy)
+  
+  #converting a large list back into a dataframe again
+  large_data <- do.call(what="rbind", split) %>% dplyr::select(-xy_combined)
+  
+  #selecting necessary fields in a right order
+  large_data <- large_data %>% dplyr::select(SHIPTYPE, name, mmsi, timestamp, course, speed, longitude, latitude)
+  
+  #Rename columns
+  colnames(large_data) <- c("SHIPTYPE","SHIPNAME", "MMSI", "TIMESTAMP", "COURSE", "SPEED", "LONGITUDE", "LATITUDE")
+  
+  #creating "HIGHER_TYPE" & "RADAR" & "SONAR" fields
+  #the following fields are created as they are needed in the model developed for the NAVY
+  large_data <- large_data %>% mutate(HIGHER_TYPES = case_when(SHIPTYPE == "Cargo" ~ "FIRST",
+                                                               SHIPTYPE == "Tanker" ~ "SECOND",
+                                                               SHIPTYPE == "Tug" ~ "THIRD",
+                                                               SHIPTYPE == "Fishing" ~ "FOURTH",
+                                                               SHIPTYPE == "Passenger" ~ "FIFTH",
+                                                               SHIPTYPE == "Pilot" ~ "SIXTH",
+                                                               .default = "OTHER")) %>%
+    mutate(RADUIS = case_when(SHIPTYPE == "Cargo" ~ 15000,
+                              SHIPTYPE == "Tanker" ~ 12000,
+                              SHIPTYPE == "Tug" ~ 10000,
+                              SHIPTYPE == "Fishing" ~ 8000,
+                              SHIPTYPE == "Passenger" ~ 7000,
+                              SHIPTYPE == "Pilot" ~ 6000,
+                              .default = 5000)) %>%
+    
+    mutate(SONAR = case_when(SHIPTYPE == "Cargo" ~ 12000,
+                             SHIPTYPE == "Tanker" ~ 9000,
+                             SHIPTYPE == "Tug" ~ 7000,
+                             SHIPTYPE == "Fishing" ~ 5000,
+                             SHIPTYPE == "Passenger" ~ 4000,
+                             SHIPTYPE == "Pilot" ~ 3000,
+                             .default = 2000))
+  
+  #removing ', ' from the shipname field
+  large_data$SHIPNAME <- gsub(","," ", large_data$SHIPNAME)
+  
+  # ChatGPT's suggestion to make previous code run faster (as of Feb/17/2024)
+  library(data.table)
+  
+  # Convert to data.table
+  setDT(large_data)
+
+  # Convert TIMESTAMP to POSIXct
+  large_data[, TIMESTAMP := as.POSIXct(TIMESTAMP)]
+  
+  # Sort by MMSI and TIMESTAMP
+  setorder(large_data, MMSI, TIMESTAMP)
+  
+  # Compute time_lag
+  large_data[, time_lag := TIMESTAMP - shift(TIMESTAMP, fill = first(TIMESTAMP)), by = MMSI]
+  
+  # Compute time_lag_exceeds_threshold
+  cutoff_mins <- minutes(cutoff_mins)  # Adjust this threshold as needed
+  large_data[, time_lag_exceeds_threshold := time_lag > cutoff_mins]
+  
+  # Compute group_id
+  large_data[, group_id := cumsum(time_lag_exceeds_threshold), by = MMSI]
+  
+  # Compute MMSI_NEW
+  large_data[, MMSI_NEW := paste0(MMSI, "_", group_id)]
+  
+  # Sort by MMSI_NEW and TIMESTAMP
+  setorder(large_data, MMSI_NEW, TIMESTAMP)
+  
+  #counting number of points per MMSI
+  count <- large_data %>% group_by(MMSI_NEW) %>% count()    
+  
+  #Inner_join count data to large data, then filtering mmsi whose total count is greater than or equal to 10 
+  large_data <- large_data %>% inner_join(count, by=join_by(MMSI_NEW)) %>%
+    mutate(MMSI = MMSI_NEW) %>% filter(n > threshold) %>% 
+    dplyr::select(-c(n, time_lag, time_lag_exceeds_threshold, group_id, MMSI_NEW)) %>% 
+    as.data.frame()
+
+  #writing a cleaned ais data unto Global Environment with a new name
+  assign(layer_name, large_data, envir = .GlobalEnv)
+  
+  #Compare before and after
+  comparison <- function(data1, data2) {
+    
+    before <- dim(data1)[1]
+    after <- dim(data2)[1]
+    
+    diff <- before - after
+    
+    cat("the total row number of the input dataset is", dim(data1)[1], '\n')
+    cat("the total row number of the output dataset is", dim(data2)[1], '\n')
+    cat("the difference between the two dataset is", diff)
+  }
+  
+  comparison(df, large_data)
+  
+}
+
+
+```
+
+<p style = "color:#082C6F; font-size: 20px">
+The following is the result after processing December 1st dataset.</p>
+<ul style = "font-size: 20px">
+<li>the total number of rows for Dec 1st dataset is 1,440,914</li>
+<li>the total number of rows after pre-processing is 397,122</li>
+<li>the difference between the two is 1,043,792</li>
+</ul>
+
+<p style = "color:#082C6F; font-size: 20px">
+The following is the result after processing December 2nd dataset.
+<ul style = "font-size: 20px">
+<li>the total number of rows for Dec 2nd dataset is 1,452,537</li>
+<li>the total number of rows after pre-processing is 389,281</li>
+<li>the difference between the two is 1,063,256</li>
+</ul>
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">
+The results powerfully demonstrate the importance of the data clean-up process. We found that a large portion of our datasets was redundant or consisted of noise, rendering it unnecessary. This clean-up significantly streamlines the datasets, preparing them effectively for further analysis. It's undeniable: processing 389,281 rows as opposed to 1,452,537 can make a significant difference in data analysis. </p>
+
+### <span><a id="points_to_paths" style="color: #7BB6B3;">Points to Paths Analysis with Feature Blending Effects</a></span>
+
+```{r, echo=TRUE, eval=TRUE, message=FALSE, warning=FALSE}
+points_to_paths <- function(pnt_data_frame, threshold, layer_name){
+  
+  #filtering an input data so each vessel should have at least no. of points greater than threhold
+  mmsi_count <- pnt_data_frame %>% group_by(MMSI) %>% count()
+  
+  ais_df <- inner_join(pnt_data_frame, mmsi_count, by = "MMSI")
+  
+  ais_df <- ais_df %>% filter(n > threshold) #here is threshold parameter
+  
+  #creating sf point object
+  pnt <- st_as_sf(ais_df, coords = c("LONGITUDE", "LATITUDE"), crs = 4326)
+  
+  #splitting the above 'pnt' layers by mmsi (each ship)
+  lines <- split(pnt, pnt$MMSI)
+  
+  #timestamp ordering function
+  f <- function(x) x[order(x$TIMESTAMP),]
+  
+  #apply time ordering function to all the list in line object
+  lines <- lapply(lines, f)
+  
+  #next step is to combine all point geometries to a single multipoint geometry.
+  #using "st_combine" to do that
+  
+  lines <- lapply(lines, st_combine)
+  
+  #casting multipoint geometry into linestring object
+  lines <- lapply(lines, st_cast, to = "LINESTRING")
+  
+  # At this stage we have a list of 16,130 individual "linestring" geometries, one for each ship. The list can be combined back to an sfc geometry column using do.call
+  geom <- do.call(c, lines)
+  
+  #transforming geom object into sf object
+  layer_lines <- st_as_sf(geom, data.frame(id = names(lines)))
+  
+  # Assigning the result to a variable in the global environment
+  layer_lines_global <- layer_lines
+  assign(layer_name, layer_lines_global, envir = .GlobalEnv)
+  
+  #drawing the output on a tm_map
+  #library(mapview)
+  #mapview(layer_lines, lwd = 0.1, legend=FALSE)
+}
+
+points_to_paths(Dec_01_NEW_DATA, 20, "linestring_1")
+
+```
+
+```{r, echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE, out.width="60%", fig.align='center'}
+library(mapview)
+mapview(linestring_1, lwd=0.1, legend=FALSE)
+```
+
+<br>
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">
+Once the initial data clean-up process is completed, one can effortlessly convert existing points into paths by simply casting point data into linestrings, a process that involves linking data points in sequence to form continuous lines. In addition, the vessel type field is used to color-code these linestrings, thereby enhancing visualization. One of the most notable advantages of this approach is its ability to significantly reduce data size. For example, consider the data storage savings: the original dataset for December 1st alone contained 1,440,914 rows and 24 columns, occupying 375MB of storage space. However, following the 'pre-processing' and 'points_to_paths' conversion, the dataset was reduced to just 1,922 features, requiring merely 4.3MB of storage space. This substantial reduction not only facilitates faster data processing speeds but also results in crisper visualizations and more intuitive interpretations, as evidenced in the figure above.</p>
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">In addition, I have employed feature blending effects in order to accentuate high density areas where many lines overlap. This technique is instrumental in uncovering hidden patterns and insights, allowing for a more nuanced interpretation. The list of supported options includes but not limited to 'add', 'multiply', 'screen', 'overlay', 'color burn', etc. A picture is truly worth a thousand words: the figure below illustrates the dramatic contrast when applying 'multiply' and 'add' effects to the original linestring features. As can be seen, while the multiply effect tends to darken areas of overlap, the add effect creates a lighter and brighter visual impression. Those who are interested in the complete list of available effects and their corresponding descriptions can refer to the following link - https://doc.arcgis.com/en/arcgis-online/create-maps/use-blend-modes-mv.htm </p>
+
+```{r, echo=TRUE, eval=FALSE, warning=FALSE, message=FALSE}
+
+point_line_blending_effect <- function(df, title = "AIS Vis", linewidth = 0.05, color="purple" ,blend = "add") {
+  
+  library(sf)
+  library(ggblend)
+  south <- st_read('/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization',
+                   quiet=TRUE, layer = "SouthKorea")
+  north <- st_read('/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization',
+                   quiet=TRUE, layer = "NorthKorea")
+  
+  ggplot(data=df) + geom_sf(data=south) + geom_sf(data=north) +
+    geom_path(linewidth=linewidth, color=color,
+              mapping=aes(x=LONGITUDE, y=LATITUDE, group=MMSI)) * blend(blend=blend) +
+    labs(title = title) + xlab(NULL) + ylab(NULL)
+}
+
+
+#showcasing feature blending effects 
+blending_path_multiply <- point_line_blending_effect(Dec_01_NEW_DATA, blend="multiply", title="Multiply", color="darkorange")
+blending_path_add <- point_line_blending_effect(Dec_01_NEW_DATA, blend="add", title = "Add", color="darkorange")
+patchwork(blending_path_multiply, blending_path_add, ncol=3)
+
+```
+
+```{r, echo=FALSE, out.width="75%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization/img/feature_blending_capture.png")
+```
+
+### <span><a id="detection" style="color: #7BB6B3;">Radar/Sonar Detection Range Analysis</a></span>
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px"> Navy vessels, in peacetime, are primarily used for patrolling purposes. They are equipped with radars and sonars to detect enemy's potential attacks and threats. Therefore, it is imperative for them to cover as much area as possible during their operation. In this context, Korean navy requested us to develop a tool that can visualize the detection range of vessels and calculate a total coverage area for each operation. To achieve this, we utilized a linestring layer to apply buffer ranges for selected vessels. Since actual detection ranges are classified military secrets, we assigned arbitrary detection ranges to different vessel categories for demonstration purposes only. The resulting visualization and total coverage calculation are displayed in the following figure. The plot on the left shows the state before dissolving overlapping features, whereas the plot on the right displays the state after all overlapping features have been dissolved. The total coverage area is based on the dissolved features.</p>
+
+```{r, echo=TRUE, eval=FALSE, message=FALSE, warning=FALSE}
+
+buffer_union_analysis <- function(df, dist_or_type=NULL, buffer_dist=20){
+  
+  if(!is.numeric(dist_or_type) & !is.character(dist_or_type)) {
+    
+    print("Please input 'dist_or_type' parameter")
+    
+  } else {
+    
+    #1) Casting MMSI into character
+    df$MMSI <- as.character(df$MMSI)
+    
+    #2) Extracting unique MMSIs from an original data
+    inter <- df %>% distinct(MMSI, .keep_all = TRUE)
+    
+    #3) Points to paths
+    points_to_paths(df, threshold = 50, layer_name = "linestring")
+    
+    #4) Joining linestgin polygon shapefile with attribute data
+    join <- linestring %>% left_join(inter, by = c("id" = "MMSI"))
+    
+    #5) Re-projecting layers so as to have a meter as its unit
+    join <- join %>% st_set_crs(4326) %>% st_transform(3857)
+    
+    #6) Calculating the lengths of trajectories using st_length
+    join <- join %>% mutate(distance = as.numeric(st_length(.))) %>% arrange(desc(distance))
+    
+    
+    if(is.numeric(dist_or_type)) {
+      
+      trajs <- join %>% filter(distance > dist_or_type)
+      trajs_buffer <- st_buffer(trajs, buffer_dist*1000)
+      
+      #union and calculate area
+      trajs_buffer_union <- trajs_buffer %>% st_union() %>% st_as_sf() %>% mutate(areas = as.numeric(st_area(.))/1000000)
+      
+      #draw both buffer and union map side by side
+      
+      buffer_plot <- ggplot() + geom_sf(data=south) + geom_sf(data=north) + geom_sf(data=trajs_buffer, fill="pink", alpha=0.5)
+      union_plot <- ggplot() + geom_sf(data=south) + geom_sf(data=north) + geom_sf(data=trajs_buffer_union, fill="pink", alpha=0.5)
+      
+      patchwork(buffer_plot, union_plot,
+                title=paste("the total area covered by chosen vessels is", round(trajs_buffer_union$areas[1],2), 'm\u00B2'))
+      
+      
+    } else if(is.character(dist_or_type)) {
+      
+      ship_type <- join %>% filter(SHIPTYPE == dist_or_type)
+      ship_type_buffer <- st_buffer(ship_type, buffer_dist*1000)
+      
+      #union and calculate area
+      ship_type_buffer_union <- ship_type_buffer %>% st_union() %>% st_as_sf() %>%mutate(areas = as.numeric(st_area(.))/1000000)
+      
+      #draw both buffer and union map side by side
+      
+      buffer_plot <- ggplot() + geom_sf(data=south) + geom_sf(data=north) + geom_sf(data=ship_type_buffer, fill="pink", alpha=0.5)
+      union_plot <- ggplot() + geom_sf(data=south) + geom_sf(data=north) + geom_sf(data=ship_type_buffer_union, fill="pink", alpha=0.5)
+      
+      patchwork(buffer_plot, union_plot,
+                title=paste("the total area covered by chosen vessels is", round(ship_type_buffer_union$areas[1],2), 'km\u00B2'))
+    }
+    
+  }
+  
+}
+
+buffer_union_analysis(Dec_01_NEW_DATA, dist_or_type = "Tug")
+
+```
+
+```{r, echo=FALSE, out.width="75%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization/img/Tug_detection_range.png")
+```
+
+
+### <span><a id="combining" style="color: #7BB6B3;">Combining Trajectories and Points</a></span>
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">
+The figure below showcases how point and linestring visualization methods can be synthesized. Specifically, the 'speed' and 'course' fields were utilized to enhance map readability further. On the map, a triangle represents the course of vessels, while color gradation visualizes their speed.</p>
+
+```{r, echo=FALSE, out.width="50%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization/img/course_speed_visualization.png")
+```
+
+### <span><a id="traj_cluster" style="color: #7BB6B3;">Trajectory Clustering Analysis</a></span>
+<p style = "color:#082C6F; font-size: 20px; text-indent:25px">In data mining, clustering analysis is commonly used to uncover patterns and insights from unlabeled datasets. Specifically, clustering analysis attempts to classify features into distinct clusters based on the inherent similarities within a dataset. One unique aspect of our analysis is that we have trajectories (not points) as an input for clustering analysis. A trajectory consists of a series of locations generated by a vessel, thus it can clearly show the movement path of an individual vessel. Therefore, the goal of trajectory clustering in this project was to neatly summarize the AIS dataset by identifying groups of trajectories that display similar movement characteristics, which is defined by the shapes of the trajectories. In this section, the methodological details of each method employed are omitted, as they are out of scope of this article. Instead, I will briefly discuss what k-medoids, DBSCAN, and HDBSCAN clustering methods are and present the results from each method.</p>
+
+### <span><a id="dbscan" style="color: #7BB6B3; text-indent:25px">DBSCAN Results</a></span>
+<p style = "color:#082C6F; font-size: 20px; text-indent:25px">
+DBSCAN, which stands for Density-Based Spatial Clustering of Applications with Noise, aims to distinguish "clusters" from "noise" in a dataset. It does so by utilizing two key parameters: the distance ($\epsilon$) threshold and the minimum number of points thresholds required to form a cluster ($MinPts$). Once these parameters are defined, DBSCAN divides points into three categories: core, border, and noise. A 'core' point is labeled as one if it has at least $MinPts$ within its $\epsilon$ neighborhood. 'Border' points are those that do not meet the $MinPts$ criterion but are within the $\epsilon$ distance of a core point. Points that are neither core nor border are classified as 'noise.' DBSCAN then merges clusters that are adjacent to each other, forming larger clusters. This iterative process continues until all points in the dataset are evaluated. In DBSCAN analysis, the selection of $\epsilon$ and $MinPts$ parameters is crucial, as they significantly influence the results of the analysis. The following figure showcases the results from DBSCAN clustering analysis.</p>
+
+```{r, echo=FALSE, out.width="75%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization/img/dbscan_results_all.png")
+
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization/img/dbscan_results_sep.png")
+```
+
+### <span><a id="hdbscan" style="color: #7BB6B3;">HDBSCAN Results</a></span>
+<p style = "color:#082C6F; font-size: 20px; text-indent:25px">While the traditional DBSCAN approach is capable of clustering trajectories of any shape, as illustrated in the plot above, it has trouble identifying clusters when datasets display uneven density distributions. However, advancements in clustering methods effectively address these limitations. Building upon DBSCAN approach, HDBSCAN incorporates a hierarchical clustering strategy which enables to determine the epsilon value with a stable function. Moreover, HDBSCAN simplifies the cluster identification process by employing a dendrogram plot. The following graphs show the results from HDBSCAN analysis.</p>
+
+```{r, echo=FALSE, out.width="75%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization/img/hdbscan_results_all.png")
+
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization/img/hdbscan_resuls_sep.png")
+```
+
+### <span><a id="kmedoids" style="color: #7BB6B3;">K-medoids Results</a></span>
+<p style = "color:#082C6F; font-size: 20px; text-indent:25px">
+K-medoids is the one last method employed in the trajectory clustering analysis. Unlike the two preceding methods, a researcher needs to predetermine a parameter K (i.e., the number of cluster). One can determine this either by visual inspection of datasets or by examining a scree plot to identity a point where the sum of squared error (SSE) is minimized. Once the value of K is determined, the algorithm starts to form clusters while minimizing the distance between trajectories in a cluster and center trajectory. For each iteration, centroid and clusters are reassigned, and this continues until a function converges. The figure below displays the results of K-medoids clustering.           
+</p>
+
+```{r, echo=FALSE, out.width="75%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization/img/kmedoids_results_all.png")
+
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization/img/kmedoids_results_sep.png")
+```
+<p style = "color:#082C6F; font-size: 20px; text-indent:25px">As demonstrated, trajectory clustering analysis is unquestionably revealing some meaningful patterns that would otherwise remain invisible to the unaided eye. However, it should be noted that no single method proves superior across all scenarios. Therefore, one needs to choose the most suitable approach depending on the various characteristics of datasets, such as their density and distribution patterns. This selection process demands considerable time and effort as even small adjustments in tuning parameters may lead to substantial changes in analysis outcomes. Since the primary aim of this article has been to showcase various visualization techniques for AIS data mining, I have not covered the specifics of identifying optimal tuning parameters for each method. However, I am confident that with a more through scientific investigation, clustering analysis will be able to uncover even deeper insights.</p>  
+
+
+## <span><a id="summary" style="color: #7BB6B3; text-transform: uppercase">Project Summary</a></span>
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">
+This brings us to the end of this article. As aimed at the outset, I have comprehensively discussed all the methods employed in developing the application. The front-end user interface was developed in qt c++ by a developer, and the final product was  delivered to the Korean Navy in November 2023. As this article has illustrated, analyzing AIS data can uncover insightful patterns and enhance our understanding of maritime traffic like never before. The realm of AIS research is still rapidly expanding, offering numerous opportunities for further exploration. My future research, if time permits, will mainly focus on leveraging AIS data for trajectory prediction, anomaly detection, navigation, surveillance, among other applications.</p>
+
+<br>
+<br>
+
+
+
+
+

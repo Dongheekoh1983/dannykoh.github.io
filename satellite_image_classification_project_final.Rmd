@@ -1,0 +1,913 @@
+---
+title:
+output:
+  html_document:
+    theme: journal
+    df_print: paged
+    code_folding: show
+  pdf_document: default
+---
+
+<style>
+.html-widget {
+    margin: auto;
+}
+</style>
+
+<style type="text/css">
+.main-container {
+  max-width: 1250px;
+  margin-left: auto;
+  margin-right: auto;
+  color: #082C6F;
+  font-family: Arial;
+  caption-side: bottom;
+}
+td, th {
+ text-align: left;
+ padding: 8px;
+}
+tr:nth-child(even) {
+ background-color: #dddddd;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+<br>
+
+# <span style="color:#072B6F; font-weight:bold; font-size: 40px;">Identifying Land Use Land Cover(LULC) with Landsat Image using Machine Learning Methods</span>
+
+<br>
+
+><p style = "color:#7BB6B3; font-weight: bold;">Satellite image classification using PCA, K-means clustering, Random Forest, Bagging, Classification Tree, Logistic Regression, and Support Vector Machine(SVM) </p>
+
+<br>
+
+<p style = "color:#082C6F; font-size: 20px !important; font-family: Arial;text-indent: 25px"> This project investigates various machine learning techniques in predicting Land Use/Land Cover(LULC) classes. For this analysis, I have chosen Knoxville, TN, as a case study site and utilized a Landsat image dataset obtained from USGS Earth Explore. This project is centered around two primary objectives; first, identifying the most effective predictors for classifying LULC using two most widely recognized unsupervised learning algorithm - Principal Component Analysis(PCA) and K-means clustering; and second, automatically delineating specific land use types - urban, forest, cropland, and water - through various supervised learning algorithms including Random Forest, Bagging, Classification Tree, Logistic Regression, and Support Vector Machine(SVM).</p>
+
+<p style = "color:#082C6F; font-size: 20px !important; font-family: Arial;text-indent: 25px">
+This project has yielded several key insights: 1) all supervised methods demonstrated comparable performance regarding producer's accuracy rates; 2) while these algorithms effectively identified water bodies and forests, they exhibited a significant level of confusion in differentiating between cropland and urban areas; 3) the classification tree, with its visual representation, provided the most interpretable results, although it was slightly less accurate than Random Forest method in terms of misclassification rates.;4) among all predictors employed in the study, band1 and the Normalized Difference Vegetation Index(NDVI) emerged as the most critical variables for determining LULC types.</p>
+<br>
+
+## <span style="color: #7BB6B3; text-transform: uppercase;">Project Outline</span>
+
+<ul style = "color:#7BB6B3; font-size:20px">
+<li><a href="#data_processing" style = "color: #7BB6B3">Data Description and Pre-processing</a></li>
+<li><a href="#unsupervised" style = "color:#7BB6B3">Unsupervised Learning: Data Driven Approaches for Classification</a>
+    <ul>  
+       <li><a href="#pca" style = "color: #7BB6B3"> Principal Component Analysis(PCA)</li>
+       <li><a href="#kmeans" style = "color: #7BB6B3">K-Means Clustering Analysis</a></li>
+    </ul>   
+<li><a href="#supervised" style = "color: #7BB6B3"> Supervised Machine Learning Approaches for Classification</a>
+   <ul>  
+      <li><a href="#random_forest" style = "color: #7BB6B3"> Random Forest </li>
+      <li><a href="#bagging" style = "color: #7BB6B3"> Bagging </li>
+      <li><a href="#regression_tree" style = "color: #7BB6B3"> Regression Tree</li>
+      <li><a href="#logistic_regression"style = "color: #7BB6B3"> Logistic Regression </li>
+      <li><a href="#svm" style = "color: #7BB6B3"> Support Vector Machine </li>
+   </ul>
+<li><a href="#comparison" style = "color: #7BB6B3">A Visual Comparison with K-means Clustering(Unsupervised Learning Results)</a>   
+<li><a href="#supervised_summary" style = "color: #7BB6B3"> Summary of Supervised Learning Results</a>
+<li><a href="#project_summary" style = "color: #7BB6B3"> Project Summary</a>
+</ul>
+
+<br>
+
+### <span><a id="#" style="color: #7BB6B3;">Setting Up a Working Environment</a></span>
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px"> For this project, I utilized the raster and rgdal packages primarily for image processing; tidyverse and knitr for data wrangling; the vegan and MASS packages for data processing; ggplot for data visualization; and randomForest, rpart, and e1071 for implementing machine learning algorithms.</p>
+
+```{r, echo=TRUE, eval=FALSE, message = FALSE, warning = FALSE}
+library(raster)
+library(rgdal)
+library(tidyverse)
+library(vegan)
+library(MASS)
+library(knitr)
+library(ggplot2)
+library(randomForest)
+library(rpart)
+library(e1071)
+setwd('/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/analysis & data')
+```
+
+## <span><a id="data_processing" style="color: #7BB6B3; text-transform: uppercase">Data Description and Pre-processing</a></span>
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">The Landsat image of Knoxville utilized in this project is derived from Landsat5 data, which was downloaded from USGS Earth Explorer. The original resolution of the image is 30m by 30m, but it has been downsampled to 90m by 90m to reduce the overall size of the dataset. The image dimensions are 498 pixels in width, 551 pixels in height, and consist of 7 bands. The figure below displays the Knoxville Landsat image from February that I employed for the analysis.</p> 
+<br>
+```{r, echo=FALSE, out.width="60%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/Original_Feb_LandSat_image.png")
+```
+<br>
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">The intensity per band is what will be used in a multivariate data driven approach to determine the land cover classifications. The R package Raster is used to extract these values from Landsat image in .tif format. The entire file contains 1,916,929 individual readings.</p>
+<br>
+```{r, echo=FALSE, out.width="75%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/band_dist.png")
+```
+<br>
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">The seven band responses (as shown in the figure above) appear to be normally distributed. The means, medians, and standard deviations of each band are as follows:</p>
+<br>
+<table class="table table-hover" style="font-size:18px;">
+  <thead>
+    <tr>
+      <th scope="col">Band</th>
+      <th scope="col">Mean</th>
+      <th scope="col">Median</th>
+      <th scope="col">Standard Deviation</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="table-active">
+      <td>Band-1</td>
+      <td>53.57</td>
+      <td>52</td>
+      <td>7.91</td>
+    </tr>
+    <tr>
+      <td>Band-2</td>
+      <td>23.66</td>
+      <td>23</td>
+      <td>5.41</td>
+    </tr>
+    <tr class="table-primary">
+      <td>Band-3</td>
+      <td>25.64</td>
+      <td>24</td>
+      <td>8.28</td>
+    </tr>
+    <tr>
+      <td>Band-4</td>
+      <td>39.14</td>
+      <td>39</td>
+      <td>12.49</td>
+    </tr>
+    <tr>
+      <td>Band-5</td>
+      <td>65.79</td>
+      <td>66</td>
+      <td>23.73</td>
+    </tr>
+    <tr>
+      <td>Band-6</td>
+      <td>101.89</td>
+      <td>102</td>
+      <td>5.20</td>
+    </tr>
+    <tr>
+      <td>Band-7</td>
+      <td>30.72</td>
+      <td>31</td>
+      <td>11.10</td>
+    </tr>
+  </tbody>
+  <caption style="text-align:center; font-size: 18px">Table 1. Band Intensity Description</caption>
+</table>
+<br>
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">To create the categorical response variable comprising four land use types - determined by the analysis results of unsupervised learning, as detailed in the section below - I employed the drawPoly function from the raster package to draw  polygons on the Landsat image, which served as training datasets for urban areas, forests, croplands, and waterbodies. The figure below illustrates the polygons used to create the training datasets. The red polygons on the map represent urban areas, while the green polygons indicate forested regions. Blue areas capture water bodies, and the brown polygons denote croplands</p>
+<br>
+
+```{r,echo=TRUE, eval=FALSE ,fig.align='center'}
+#Interactive zooming in. Plotting band3 of feb (example)
+newextent <- zoom(feb[[3]]) 
+plotRGB(feb, r=3, g=2, b=1, ext=newextent, stretch='lin')
+
+urb1 <- drawPoly(sp=TRUE, col='red', lwd=2)
+urb2 <- drawPoly(sp=TRUE, col='red', lwd=2)
+urb3 <- drawPoly(sp=TRUE, col='red', lwd=2)
+urb4 <- drawPoly(sp=TRUE, col='red', lwd=2)
+forest1 <- drawPoly(sp=TRUE, col='red', lwd=2)
+forest2 <- drawPoly(sp=TRUE, col='red', lwd=2)
+crop1 <- drawPoly(sp=TRUE, col='red', lwd=2)
+crop2 <- drawPoly(sp=TRUE, col='red', lwd=2)
+crop3 <- drawPoly(sp=TRUE, col='red', lwd=2)
+water1 <- drawPoly(sp=TRUE, col='red', lwd=2)
+water2 <- drawPoly(sp=TRUE, col='red', lwd=2)#portion of TN river
+water3 <- drawPoly(sp=TRUE, col='red', lwd=2) #Douglas lake
+save(urb1, urb2, urb3, urb4, forest1, forest2, crop1, crop2, crop3,
+     water1, water2, water3, file = 'train_dh_poly.Rdata')
+
+#Overlaying polygon training regions on top of Feb image
+load("train_dh_poly.Rdata")
+plotRGB(feb, 3, 2, 1, stretch="lin")
+plot(urb1, add=TRUE, border="red")
+plot(urb2, add=TRUE, border="red")
+plot(urb3, add=TRUE, border="red")
+plot(urb4, add=TRUE, border="red")
+plot(forest1, add=TRUE, border="green")
+plot(forest2, add=TRUE, border="green")
+plot(crop1, add=TRUE, border="brown")
+plot(crop2, add=TRUE, border="brown")
+plot(crop3, add=TRUE, border="brown")
+plot(water1, add=TRUE, border="blue")
+plot(water2, add=TRUE, border="blue")
+plot(water3, add=TRUE, border="blue")
+
+#creating training dataset
+lsat.labels <- rep(NA, ncell(feb))
+lsat.labels[unlist(cellFromPolygon(feb,urb1))] <- "urban"
+lsat.labels[unlist(cellFromPolygon(feb,urb2))] <- "urban"
+lsat.labels[unlist(cellFromPolygon(feb,urb3))] <- "urban"
+lsat.labels[unlist(cellFromPolygon(feb,urb4))] <- "urban"
+lsat.labels[unlist(cellFromPolygon(feb,forest1))] <- "forest"
+lsat.labels[unlist(cellFromPolygon(feb,forest2))] <- "forest"
+lsat.labels[unlist(cellFromPolygon(feb,crop1))] <- "cropland"
+lsat.labels[unlist(cellFromPolygon(feb,crop2))] <- "cropland"
+lsat.labels[unlist(cellFromPolygon(feb,crop3))] <- "cropland"
+lsat.labels[unlist(cellFromPolygon(feb,water1))] <- "water"
+lsat.labels[unlist(cellFromPolygon(feb,water2))] <- "water"
+lsat.labels[unlist(cellFromPolygon(feb,water3))] <- "water"
+
+train.ids <- (!is.na(lsat.labels)) #Get a list of which rows are training data
+```
+
+
+```{r, echo=FALSE, out.width="60%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/training_polygons.png")
+```
+<br>
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">In addition to the Landsat image, the Normalized Difference Vegetation Index (NDVI) is another widely used metric for assessing vegetation dynamics. NDVI can be computed from Landsat band 3 (visible red) and band 4 (near infrared). This index is particularly valuable for classifying different land cover types, especially in areas with vegetation. As such, the NDVI layer is also used in our study as one of the covariates for land cover classification. The computed NDVI layer is displayed below (top right). The distributions of NDVI for each land use type, as shown below (left and bottom right), reveal that cropland and water bodies are distinctly separated from other land use types, while urban areas and forests significantly overlap with one another. This overlap can be attributed to the presence of green spaces within urban areas.</p>
+<br>
+
+```{r, echo=TRUE, eval=FALSE, message = FALSE, warning = FALSE}
+ndvi <- overlay(feb$feb.3, feb$feb.4, fun=function(x,y){(y-x)/(x+y)})
+par(mfrow=c(1,1))
+plot(ndvi, main="NDVI")
+covs <- addLayer(feb, ndvi) #combining feb layers and ndvi
+names(covs) <- c("band1", "band2","band3","band4","band5","band6","band7","NDVI")
+plot(covs)
+
+all.data <- data.frame(labels=as.factor(lsat.labels), data.matrix(values(covs)))
+tr_subset <- subset(all.data, train.ids)
+
+#Visualizing the distribution of covariates for each class
+mylist <- split(tr_subset, tr_subset$labels) #subsetting training data by each class
+val_crop <- mylist$cropland
+val_urb <- mylist$urban
+val_forest <- mylist$forest
+val_water <- mylist$water
+
+par(mfrow = c(4,1))
+hist(val_crop$band4, main="Cropland", xlab="NDVI", xlim=c(0,100),breaks=seq(0,100, by=5), col="orange")
+hist(val_urb$band4, main="Urban", xlab="NDVI", xlim=c(0,100), breaks=seq(0,200, by=5), col="grey")
+hist(val_forest$band4, main="Forest", xlab="NDVI", xlim=c(0,100),breaks=seq(0,100, by=5), col="green")
+hist(val_water$band4, main="Water", xlab="NDVI", xlim=c(0,100), ylim=c(0,50),breaks=seq(0,100, by=1), col="blue")
+
+#Scatter plot using band3 and 4 
+ggplot(data=subset(all.data, train.ids))+
+  geom_point(aes(x=band3, y=band4, color=labels), size=1, alpha=0.5)+
+  guides(color=guide_legend(override.aes = list(size=3, alpha=1)))
+
+```
+
+```{r, echo=FALSE, out.width="60%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/ndvi_and_histogram.png")
+```
+<br>
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">I have integrated NDVI into the February Knoxville raster brick. The figure below displays all layers I used for LULC classification.</p>
+<br>
+```{r, echo=FALSE, out.width="60%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/Plotting bands in Feb image.png")
+```
+
+## <span><a id="unsupervised" style="color: #7BB6B3; text-transform: uppercase">Unsupervised Learning: Data Driven Approaches for Classification</a></span>
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">To determine the appropriate number of land use classes for the images, we first adopt a data-driven approach. This entails utilizing the seven bands of information from the images, rather than relying on visual inspection to classify different land use types such as agricultural, urban, or forested areas. In this data-driven approach, we will analyze the multivariate band responses using Principal Component Analysis (PCA) and K-means clustering techniques. The results from PCA will help visually identify the number of distinct land use types that may be relevant to the spectral data, while K-means clustering will quantify the number of clusters present in the spectral data, which can then be interpreted as the number of land use classes. This analysis is predicated on the assumption that the data are normally distributed???a premise that appears valid based on the band intensity data presented above.</p> 
+
+### <span><a id="pca" style="color: #7BB6B3;">Principal Component Analysis</a></span>
+
+```{r,echo=TRUE, eval=FALSE ,fig.align='center'}
+set.seed(5)
+test <- feb_bands[sample(nrow(feb_bands), 5000),]
+test <- as.matrix(na.omit(test))
+pca <- princomp(test, cor=T)
+plot(pca$sdev^2/sum(pca$sdev^2), type="b", ylab="Proportion of Variance" ,xlab="Principal Compnents", main="Proportion of Variance for PCA")
+
+a <- rda(test, scale = T)
+biplot(a, type = c("text", "points"))
+
+kable(as.data.frame(pca$loadings[,1:5]), digits=round(4))
+
+par(mfrow=c(1,2))
+biplot(a, display= "sites")
+biplot(a, display= "sites", choices = c(1,3))
+```
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">To complete the PCA, 5,000 randomly sampled pixels from the image were selected, as the entire dataset contains 1,916,929 individual readings. The training dataset was analyzed using the Vegan package for plotting purposes and the function princomp was employed to extract the results.</p> 
+
+```{r, echo=FALSE, out.width="35%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/princomp.png")
+```
+<table class="table table-hover" style="font-size:18px;">
+  <thead>
+    <tr>
+      <th scope="col">Comp.1</th>
+      <th scope="col">Comp.2</th>
+      <th scope="col">Comp.3</th>
+      <th scope="col">Comp.4</th>
+      <th scope="col">Comp.5</th>
+      <th scope="col">Comp.6</th>
+      <th scope="col">Comp.7</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="table-active">
+      <td>0.83</td>
+      <td>0.08</td>
+      <td>0.05</td>
+      <td>0.03</td>
+      <td>0.006</td>
+      <td>0.00227</td>
+      <td>0.00176</td>
+    </tr>
+  </tbody>
+  <caption style="text-align:center; font-size: 18px">Table 2. PCA - Proportion of Variance</caption>
+</table>
+<br>
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">PCA targets and obtains uncorrelated components by focusing on variance. The scree plot suggests two PCs since the elbow shape occurs at PC=2. The first two PCs explain 91% of variance.</p> 
+
+```{r, echo=FALSE, out.width="35%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/biplot.png")
+```
+<br>
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">The first two PC???s are plotted where the points represent each randomly selected pixel and the arrows representing the scores of each band. Bands with the highest scores will be more effective in determining land use classes. From these results, the bands 1-3 & 7 have the highest scores along PC1 & bands 1-2, 4-5 along PC2. A table of the results is below.</p>
+
+<table class="table table-hover" style="font-size:18px;">
+  <thead>
+    <tr>
+      <th scope="col"> </th>
+      <th scope="col">Comp.1</th>
+      <th scope="col">Comp.2</th>
+      <th scope="col">Comp.3</th>
+      <th scope="col">Comp.4</th>
+      <th scope="col">Comp.5</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="table-active">
+      <td>Band1</td>
+      <td>0.3714</td>
+      <td>0.5517</td>
+      <td>0.0922</td>
+      <td>0.0014</td>
+      <td>0.7034</td>
+    </tr>
+    <tr class="table-active">
+      <td>Band2</td>
+      <td>0.3901</td>
+      <td>0.4045</td>
+      <td>0.1050</td>
+      <td>0.1433</td>
+      <td>0.3639</td>
+    </tr>
+    <tr class="table-active">
+      <td>Band3</td>
+      <td>0.4015</td>
+      <td>0.2382</td>
+      <td>0.1578</td>
+      <td>0.0543</td>
+      <td>0.5734</td>
+    </tr>
+    <tr class="table-active">
+      <td>Band4</td>
+      <td>0.3652</td>
+      <td>0.3981</td>
+      <td>0.0851</td>
+      <td>0.8000</td>
+      <td>0.1318</td>
+    </tr>
+    <tr class="table-active">
+      <td>Band5</td>
+      <td>0.3784</td>
+      <td>0.4852</td>
+      <td>0.1963</td>
+      <td>0.2560</td>
+      <td>0.0161</td>
+    </tr>
+    <tr class="table-active">
+      <td>Band6</td>
+      <td>0.3477</td>
+      <td>0.0597</td>
+      <td>0.9314</td>
+      <td>0.0870</td>
+      <td>0.0174</td>
+    </tr>
+    <tr class="table-active">
+      <td>Band7</td>
+      <td>0.3890</td>
+      <td>0.2790</td>
+      <td>0.2055</td>
+      <td>0.5133</td>
+      <td>0.1613</td>
+    </tr>
+  </tbody>
+  <caption style="text-align:center; font-size: 18px">Table 3. PCA Loadings</caption>
+</table>
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">The PCA loadings indicate that all seven bands contribute nearly equally to the first principal component (PC). Band 1 exhibits significant loading on the second and fifth PCs, while band 4 is heavily loaded on the fourth PC, and band 6 shows substantial loading on the third PC. These results suggest potential clustering along the second and third axes. However, given the very low proportion of variance explained by all axes beyond the first principal component, it is unlikely that these groupings would be particularly meaningful, though they may still provide useful insights.</p>
+
+```{r, echo=FALSE, out.width="75%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/pca_plots.png")
+```
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">Examining the PCA distribution reveals three distinct groupings that could be utilized to identify different land classes. The first cluster is the dominant "blob" near the origin, while the second consists of a small number of points that are positive along PC1 and negative along PC2. The third grouping includes points that are negative along both PC1 and PC2. The primary cluster may represent a land use type that constitutes the majority of the image. The second grouping appears as a tight cluster within the test data and may correspond to a well-defined class, such as water. The final class of land use seems to be more dispersed and may encompass multiple classifications. While the results from the PCA are not definitive, they do identify three clusters of data. It appears that several bands are beneficial for classifying land cover types, with bands 1, 2, 3, and 5 being the most useful.</p>
+
+### <span><a id="kmeans" style="color: #7BB6B3;">K-Means Clustering Analysis</a></span>
+
+```{r,echo=TRUE, eval=FALSE ,fig.align='center'}
+###*K*-Means Sum of Squares
+set.seed(3)
+ss = rep(0,10)
+for(i in 1:10)
+{
+  km = kmeans(test,i,nstart=10)
+  ss[i] = km$tot.withinss
+}
+
+par(mfrow=c(1,2))
+plot(1:10,ss,xlab = "k",ylab="total with-in ss",type='l') # plot of k versus the total with-in ss
+ss_lag = ss[2:10]
+ss_diff = ss[1:9] - ss_lag
+plot(1:9,ss_diff,xlab = "k",ylab="reduction in total with-in ss",type='l') # plot of k versus the reduction in total with-in ss
+
+###*K*-Means Results
+kmeans.3 <- kmeans(na.omit(test),3,nstart = 20)
+kmeans.4 <- kmeans(na.omit(test),4,nstart = 20)
+par(mfrow=c(2,2))
+plot(test[,1],test[,2],col=(kmeans.3$cluster),pch=20, cex=.8,xlab="X-1",ylab="X-2",main="k-means results with k=3")
+plot(test[,4],test[,5],col=(kmeans.3$cluster),pch=20, cex=.8,xlab="X-4",ylab="X-5",main="k-means results with k=3")
+plot(test[,1],test[,2],col=(kmeans.4$cluster),pch=20, cex=.7,xlab="X-1",ylab="X-2",main="k-means results with k=4")
+plot(test[,4],test[,5],col=(kmeans.4$cluster),pch=20, cex=.7,xlab="X-4",ylab="X-5",main="k-means results with k=4")
+
+```
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">K-means clustering is the second data-driven technique employed to identify data clusters. The kmeans function from the base R package was utilized to assess the reduction in Sum of Squares (SS) for up to 10 clusters using the training data. The results indicate a significant reduction in SS at 3 to 4 clusters, which aligns with the findings from the PCA. To visualize how these clusters are distributed along the axes of highest variance, plots were created for bands 1, 3, 4, and 5. The K-means results (shown in the figure below) are clearly defined along both sets of axes, suggesting that either 3 or 4 classes could be used for the final analysis, depending on the plotted results.</p> 
+
+```{r, echo=FALSE, out.width="50%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/kmeans_result_plots.png")
+```
+
+## <span><a id="supervised" style="color: #7BB6B3; text-transform: uppercase">Supervised Learning Approaches for Classification</a></span>
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">In this section, we explore five different supervised classification methods: Random Forest, Bagging, Regression Tree, Logistic Regression, and Support Vector Machine.</p> 
+
+### <span><a id="random_forest" style="color: #7BB6B3;">Random Forest</a></span>
+
+```{r,echo=TRUE, eval=FALSE ,fig.align='center'}
+#decide ntree: we tried ntree=100,200,300,400,500,600,700,800,900,1000
+#ntree=700 returns the smallest error for each of the four land use types
+
+#fit model
+modelRF <- randomForest(x=tr_subset[,c(2:9)], y=tr_subset$labels, ntree=700 
+                        ,mtry=3 ,importance=TRUE)
+
+#predicting land cover types by using all data.
+predRF <- predict(covs, model=modelRF, na.rm=TRUE)
+
+#visualizing predicted land cover classes
+cols <- c("orange", "green", "grey", "blue")
+dev.off()
+par(mfrow=c(1,1))
+plot(predRF, col=cols, legend=FALSE, main="Random Forest")
+legend("bottomright", legend=c("cropland","forest", "urban","water"),
+       fill=cols, bg="white")
+modelRF$confusion
+
+#variable importance plot
+varImpPlot(modelRF)
+
+```
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">By fitting the Random Forest model with mtry set to 3 (the square root of p, where is 9) and ntree set to 700 (after testing ntree values of 100,200,300,400,500,600,700,800,900,and 1000, we found that ntree=700 returns the smallest error for each of the four land use types), we obtain the classification error as presented below.</p> 
+
+<table class="table table-hover" style="font-size:18px;">
+  <thead>
+    <tr>
+      <th scope="col"> </th>
+      <th scope="col">Cropland</th>
+      <th scope="col">Forest</th>
+      <th scope="col">Urban</th>
+      <th scope="col">Water</th>
+      <th scope="col">Class Error</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="table-active">
+      <td>Cropland</td>
+      <td>371</td>
+      <td>15</td>
+      <td>71</td>
+      <td>0</td>
+      <td>0.19</td>
+    </tr>
+    <tr class="table-active">
+      <td>Forest</td>
+      <td>5</td>
+      <td>6986</td>
+      <td>5</td>
+      <td>0</td>
+      <td>0.001</td>
+    </tr>
+    <tr class="table-active">
+      <td>Urban</td>
+      <td>88</td>
+      <td>7</td>
+      <td>1633</td>
+      <td>0</td>
+      <td>0.055</td>
+    </tr>
+    <tr class="table-active">
+      <td>Water</td>
+      <td>0</td>
+      <td>0</td>
+      <td>1</td>
+      <td>289</td>
+      <td>0.003</td>
+    </tr>
+  </tbody>
+  <caption style="text-align:center; font-size: 18px">Table 4. Random Forest results</caption>
+</table>
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">We can observe that the classification errors for water bodies and forests are very low, both below 1%. In contrast, over 5% of urban areas and nearly 20% of croplands are misclassified. The primary confusion occurs between croplands and urban areas, which aligns with our earlier visualizations in the previous sections. The figure below illustrates the different land use types predicted by the Random Forest model.</p> 
+
+```{r, echo=FALSE, out.width="50%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/RandomForest_result.png")
+```
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">The variable importance plots for the Random Forest model display the mean decrease in accuracy and the decrease in the Gini impurity coefficient for each variable. In our analysis, it appears that band1 and NDVI significantly impact accuracy, while band1 and band2 score highest according to the Gini impurity criterion. For a large dataset like ours, this information can be beneficial, allowing us to exclude less important variables in future analyses to enhance classification accuracy. Additionally, we observe that band3 is deemed insignificant in this context, contrasting with our findings during the unsupervised learning phase. This discrepancy may be attributed to our integration of band3 and band4 into NDVI during data preprocessing. </p>
+
+```{r, echo=FALSE, out.width="50%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/VariableImportance_RandomForest.png")
+```
+
+### <span><a id="bagging" style="color: #7BB6B3;">Bagging</a></span>
+
+```{r,echo=TRUE, eval=FALSE ,fig.align='center'}
+modelBag <- randomForest(x=tr_subset[,c(2:9)], y=tr_subset$labels, ntree=700 
+                         ,mtry=8 ,importance=TRUE)
+predBag <- predict(covs, model=modelBag, na.rm=TRUE)
+plot(predBag, col=cols, legend=FALSE, main="Bagging")
+legend("bottomright", legend=c("cropland","forest", "urban","water"),
+       fill=cols, bg="white")
+modelBag$confusion
+varImpPlot(modelBag)
+```
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">With mtry set to 8 and ntree set to 700, we fit the Bagging model and obtained the classification errors displayed in Table 5. The classification error rates for forest and water bodies are identical to those from the Random Forest model, while the error rates for cropland and urban areas are higher in the Bagging model compared to the Random Forest results. The figure below illustrates the different land use types predicted by the Bagging model.</p> 
+
+<table class="table table-hover" style="font-size:18px;">
+  <thead>
+    <tr>
+      <th scope="col"> </th>
+      <th scope="col">Cropland</th>
+      <th scope="col">Forest</th>
+      <th scope="col">Urban</th>
+      <th scope="col">Water</th>
+      <th scope="col">Class Error</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="table-active">
+      <td>Cropland</td>
+      <td>368</td>
+      <td>13</td>
+      <td>76</td>
+      <td>0</td>
+      <td>0.19</td>
+    </tr>
+    <tr class="table-active">
+      <td>Forest</td>
+      <td>8</td>
+      <td>6986</td>
+      <td>2</td>
+      <td>0</td>
+      <td>0.001</td>
+    </tr>
+    <tr class="table-active">
+      <td>Urban</td>
+      <td>93</td>
+      <td>7</td>
+      <td>1628</td>
+      <td>0</td>
+      <td>0.058</td>
+    </tr>
+    <tr class="table-active">
+      <td>Water</td>
+      <td>0</td>
+      <td>0</td>
+      <td>1</td>
+      <td>289</td>
+      <td>0.003</td>
+    </tr>
+  </tbody>
+  <caption style="text-align:center; font-size: 18px">Table 5. Bagging results</caption>
+</table>
+
+```{r, echo=FALSE, out.width="50%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/Bagging_result.png")
+```
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">The variable importance plot below displays that band1 and NDVI are the most important predictors for both mean decrease accuracy and mean decrease Gini.</p> 
+
+```{r, echo=FALSE, out.width="50%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/VariableImportance_Bagging.png")
+```
+
+### <span><a id="regression_tree" style="color: #7BB6B3;">Regression Tree</a></span>
+
+```{r,echo=TRUE, eval=FALSE ,fig.align='center'}
+modelTree <- rpart(labels~.,data=tr_subset, method="class")
+plot(modelTree, margin=0.05)
+text(modelTree, use.n=TRUE, cex=0.8, pretty=0)
+predTree <- predict(modelTree, all.data, type="class")
+tree.map <- raster(feb)
+values(tree.map) <- predTree
+cols <- c("orange", "green", "grey", "blue")
+plot(tree.map, col=cols, legend=FALSE, main="Regression Tree")
+legend("bottomright", legend=c("cropland","forest", "urban","water"),
+       fill=cols, bg="white")
+conf.mat <- table(pred=predTree[train.ids], train=all.data[train.ids, "labels"])
+conf.mat
+```
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">From the confusion matrix below, it is evident that the Regression Tree classification does not perform as well as the Random Forest or Bagging models. The misclassification error rates reinforce our earlier findings, indicating that water and forest types are well-classified, while cropland is the most misclassified land use type, achieving an accuracy of only 76.5%. In contrast, the other land use types exhibit accuracy rates exceeding 90%.</p>
+
+<table class="table table-hover" style="font-size:18px;">
+  <thead>
+    <tr>
+      <th scope="col"> </th>
+      <th scope="col">Cropland</th>
+      <th scope="col">Forest</th>
+      <th scope="col">Urban</th>
+      <th scope="col">Water</th>
+      <th scope="col">Class Error</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="table-active">
+      <td>Cropland</td>
+      <td>350</td>
+      <td>4</td>
+      <td>103</td>
+      <td>0</td>
+      <td>0.234</td>
+    </tr>
+    <tr class="table-active">
+      <td>Forest</td>
+      <td>20</td>
+      <td>6976</td>
+      <td>40</td>
+      <td>0</td>
+      <td>0.009</td>
+    </tr>
+    <tr class="table-active">
+      <td>Urban</td>
+      <td>87</td>
+      <td>16</td>
+      <td>1585</td>
+      <td>23</td>
+      <td>0.074</td>
+    </tr>
+    <tr class="table-active">
+      <td>Water</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>267</td>
+      <td>0.000</td>
+    </tr>
+  </tbody>
+  <caption style="text-align:center; font-size: 18px">Table 6. Regression Tree results</caption>
+</table>
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">However, the Regression Tree model among all the models utilized in this study provides the clearest interpretation through its graphical representation. As illustrated below, the regression tree indicates that if band1 is less than 53.3 and NDVI is greater than or equal to -0.2036, the land use type is predicted to be forest. The numbers displayed beneath each land use type indicate the count of correctly or incorrectly classified observations. For example, the notation ???0/0/0/267??? under ???water??? means that all 267 observations are correctly classified as water bodies, with zero cases of misclassification.</p> 
+
+```{r, echo=FALSE, out.width="50%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/Regression_Tree.png")
+```
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">The figure below shows the land cover types predicted by the regression tree model.</p> 
+
+```{r, echo=FALSE, out.width="50%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/Regression_Tree_result_image.png")
+```
+
+### <span><a id="logistic_regression" style="color: #7BB6B3;">Logistic Regression</a></span>
+
+```{r,echo=TRUE, eval=FALSE ,fig.align='center'}
+#Do a logistic regression for each class
+classes <- levels(all.data$labels)
+C <- length(classes)
+logit.class <- as.data.frame(matrix(NA, nrow(all.data), C))
+names(logit.class) <- classes
+
+#We will first fit the model for each class (vs. all the other classes)
+#and then we will save the predicted probabilities of being in that class
+for(c in classes){
+  model.fit <- glm(I(labels==c)~., data=tr_subset, family="binomial")
+  logit.class[[c]] <- as.vector(predict(model.fit, newdata=all.data[,-1],
+                                        type="response"))
+}
+pred.logit <- apply(logit.class, 1, function(x) which(x==max(x)))
+logit.map <- raster(jul) #initialize a map. we will overwrite the values
+pred.logit <- factor(pred.logit, levels=1:4, labels=classes)
+values(logit.map) <- pred.logit
+plot(logit.map, col=cols, legend=FALSE, main="Logistic Regression")
+legend("bottomright", legend=c("cropland","forest", "urban","water"),
+       fill=cols, bg="white")
+
+#confusion matrix for logistic regression 
+logit.conf.mat <-table(pred=pred.logit[train.ids], train=all.data[train.ids, "labels"])
+logit.conf.mat
+```
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">The confusion matrix for the Logistic Regression model indicates that this method better classifies urban areas and water bodies compared to the previous methods. However, it struggles to distinguish between cropland and forest, showing less effectiveness in this regard than the other models.</p> 
+
+<table class="table table-hover" style="font-size:18px;">
+  <thead>
+    <tr>
+      <th scope="col"> </th>
+      <th scope="col">Cropland</th>
+      <th scope="col">Forest</th>
+      <th scope="col">Urban</th>
+      <th scope="col">Water</th>
+      <th scope="col">Class Error</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="table-active">
+      <td>Cropland</td>
+      <td>299</td>
+      <td>0</td>
+      <td>61</td>
+      <td>0</td>
+      <td>0.169</td>
+    </tr>
+    <tr class="table-active">
+      <td>Forest</td>
+      <td>29</td>
+      <td>6990</td>
+      <td>14</td>
+      <td>0</td>
+      <td>0.006</td>
+    </tr>
+    <tr class="table-active">
+      <td>Urban</td>
+      <td>129</td>
+      <td>6</td>
+      <td>1653</td>
+      <td>1</td>
+      <td>0.076</td>
+    </tr>
+    <tr class="table-active">
+      <td>Water</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>289</td>
+      <td>0.000</td>
+    </tr>
+  </tbody>
+  <caption style="text-align:center; font-size: 18px">Table 7. Logistic regression results</caption>
+</table>
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">Shown below are the land use types predicted by Logistic Regression.</p>
+
+```{r, echo=FALSE, out.width="50%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/Logistic_regression_result.png")
+```
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">In our approach to fitting the Logistic Regression model, we fit one land use type against the other three types at a time. Below, we present the model fit with respect to cropland land use type prediction as an example. One of the advantages of the logistic model is that it provides more interpretable results. Specifically, we can easily determine how a one-unit change in a predictor variables correlates with changes in the response variable. For instance, we observe that NDVI is the most significant predictor for cropland, with a one-unit increase in NDVI resulting in a decrease of 23 units in the log odds of a type being classified as cropland. A similar interpretation can be applied to the other land use types by examining their corresponding results.</p>
+
+```{r, echo=FALSE, out.width="60%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/logistic_regression_table1.png")
+```
+
+### <span><a id="svm" style="color: #7BB6B3;">Support Vector Machine</a></span>
+
+```{r,echo=TRUE, eval=FALSE ,fig.align='center'}
+train2.ids <- rep(FALSE, ncell(jul))
+train2.ids[seq(from = 1, to = ncell(jul), by = 10)] <- train.ids[seq(from = 1,to = ncell(jul), by = 10)]
+
+fit.svm <- svm(labels ~ ., data = all.data, subset = train2.ids, kernel = "linear")
+pred.svm <- predict(fit.svm, newdata = all.data[, -1])
+
+svm.map <- raster(jul)
+values(svm.map)[complete.cases(all.data[, -1])] <- pred.svm
+plot(svm.map, col = cols, legend=FALSE,main = "SVM")
+legend("bottomright", legend=c("cropland","forest", "urban","water"),
+       fill=cols, bg="white")
+
+conf.mat.svm <- table(pred = pred.svm[train.ids], train = all.data[train.ids,"labels"])
+conf.mat.svm
+```
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">Confusion matrix for SVM shows that SVM performs better than Classification Tree and Logistic Regression, but not as good as Random Forest and Bagging.</p>
+
+<table class="table table-hover" style="font-size:18px;">
+  <thead>
+    <tr>
+      <th scope="col"> </th>
+      <th scope="col">Cropland</th>
+      <th scope="col">Forest</th>
+      <th scope="col">Urban</th>
+      <th scope="col">Water</th>
+      <th scope="col">Class Error</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="table-active">
+      <td>Cropland</td>
+      <td>353</td>
+      <td>3</td>
+      <td>84</td>
+      <td>0</td>
+      <td>0.198</td>
+    </tr>
+    <tr class="table-active">
+      <td>Forest</td>
+      <td>21</td>
+      <td>6988</td>
+      <td>21</td>
+      <td>0</td>
+      <td>0.006</td>
+    </tr>
+    <tr class="table-active">
+      <td>Urban</td>
+      <td>83</td>
+      <td>5</td>
+      <td>1623</td>
+      <td>1</td>
+      <td>0.052</td>
+    </tr>
+    <tr class="table-active">
+      <td>Water</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>289</td>
+      <td>0.000</td>
+    </tr>
+  </tbody>
+  <caption style="text-align:center; font-size: 18px">Table 8. Support Vector Machine(SVM) results</caption>
+</table>
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">Shown below is the land use type prediction by Support Vector Machine.</p> 
+
+```{r, echo=FALSE, out.width="50%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/SVM_result.png")
+```
+
+## <span><a id="comparison" style="color: #7BB6B3; text-transform: uppercase">A Visual Comparison with K-means Clustering Result</a></span>
+
+```{r,echo=TRUE, eval=FALSE ,fig.align='center'}
+valuetable <- getValues(covs)
+head(valuetable)
+km <- kmeans(na.omit(valuetable), center=3, iter.max=100, nstart=20)
+rNA <- setValues(raster(covs),0)
+
+for(i in 1:nlayers(covs)){
+  rNA[is.na(covs[[i]])] <- 1
+}
+
+rNA <- getValues(rNA)
+valuetable <- as.data.frame(valuetable)
+valuetable$class[rNA==0] <- km$cluster
+valuetable$class[rNA==1] <-NA
+classes <- raster(covs)
+
+classes <- setValues(classes, valuetable$class)
+plot(classes, legend=FALSE, col=cols, main="K-means")
+legend("bottomright", legend=c("cropland","forest", "urban","water"),
+       fill=cols, bg="white")
+```
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">To visually compare the predicted results, we have also included the results from the K-means clustering (unsupervised learning), as shown in the figure below. It is evident that the four land use types are significantly mixed up, highlighting the limitations of the unsupervised approach. In contrast, all five supervised learning methods discussed in the previous sections demonstrate significantly improved performance over the unsupervised method. Therefore, it appears that unsupervised learning techniques, such as K-means clustering, are not suitable for our dataset.</p> 
+
+```{r, echo=FALSE, out.width="50%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/Kmeans_result_image.png")
+```
+
+## <span><a id="supervised_summary" style="color: #7BB6B3; text-transform: uppercase">Summary of Supervised Learning Results</a></span>
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">For our dataset, Random Forest outperforms the other methods in terms of confusion matrix and misclassification error rates. Water bodies and forests are the two land use types that are clearly distinguished, while croplands are somewhat mixed with urban areas. In terms of interpretability, classification trees offer the best results, as their tree plot clearly displays the outcomes in an understandable way, even though they do not perform as well as Random Forest regarding misclassification rates. Additionally, in terms of predictor importance in determining land use types, band1 and NDVI emerge as the two most significant predictors. Overall, all five supervised learning methods perform nearly equally well on our training dataset. As illustrated in the figure below, the classification accuracy for cropland is around 80%, while the accuracy for urban areas exceeds 92%. For both forest and water land use types, the classification accuracy is higher than 99%.</p> 
+
+```{r, echo=FALSE, out.width="50%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/stat577_ML_project/final project/output_images/classification_accuracy_graphs.png")
+```
+
+## <span><a id="project_summary" style="color: #7BB6B3; text-transform: uppercase">Project Summary</a></span>
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">As we initially recognized during the exploratory visual analysis phase, there is significant overlap between the urban and cropland categories. A detailed comparison of our images with satellite imagery from sources like Google aerial photography shows that many low-density urban areas, such as suburbs, are mistakenly classified as forests or croplands. This issue arises because suburban categories were not included during the training phase. Including these categories in our training would have likely improved classification results. Apart from SVM, all methods show similar levels of effectiveness concerning user and producer accuracy. Future discussions should focus on exploring why some methods perform better than others and in what situations they excel. Generally, supervised classification approaches consistently outperform unsupervised methods.</p>
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">To conclude, there are several strategies to enhance our results. First, we should improve the training phase by incorporating a wider range of training regions to accurately include various types of each category, such as high and low-density urban areas, as well as evergreen and deciduous forests. Second, we should use higher-resolution images with greater precision for training. Although the current study effectively separates forest, urban, and water categories, there is some confusion between cropland and urban areas, likely due to insufficient training methods. By increasing the number of training polygons, the model can have more learning resources, potentially improving classification results. Additionally, we have only employed February Landsat images for our training; integrating images from July, December, or utilizing combined layers like PCA may improve classification accuracy. Third, incorporating additional variables, such as Census demographic data (e.g., population), could help differentiate suburbs from cropland or forest areas, as satellite images alone cannot perfectly classify land cover. Depending on the research goals, certain features should be prioritized over others, and careful pre-planning is essential to ensure that these features accurately represent the specific categories of interest.</p>
+
+
+<br>
+<br>
+
+
+
+
+

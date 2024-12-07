@@ -1,0 +1,763 @@
+---
+title:
+output:
+  html_document:
+    theme: journal
+    df_print: paged
+    code_folding: show
+  pdf_document: default
+---
+
+<style>
+.html-widget {
+    margin: auto;
+}
+</style>
+
+<style type="text/css">
+.main-container {
+  max-width: 1250px;
+  margin-left: auto;
+  margin-right: auto;
+  color: #082C6F;
+  font-family: Arial;
+  caption-side: bottom;
+}
+td, th {
+ text-align: left;
+ padding: 8px;
+}
+tr:nth-child(even) {
+ background-color: #dddddd;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+<br>
+
+# <span style="color:#072B6F; font-weight:bold; font-size: 40px;">MINING PATTERNS AND INSIGHTS FROM AIS DATA 1 - POINT PATTERN ANALYSIS</span>
+
+<br>
+
+><p style = "color:#7BB6B3; font-weight: bold;">We are living in the age of Big Data.
+Whether you embrace or not, this change profoundly affects all of us.</p>
+
+<br>
+
+<p style = "color:#082C6F; font-size: 20px !important; font-family: Arial;text-indent: 25px">We are living in the age of Big Data. In other words, we are deluged with data. Whether you embrace it or not, this change profoundly affects all of us. As unprecedented as this may be, there are no historical figures who could offer us insightful wisdom on how to navigate this age. To be honest, a part of me feels overwhelmed by the sheer amount of data inundating us everyday and wants to avoid this at all costs, but the other part of me convinces me that it is our responsibility to embrace such change to better understand the world we live in. </p>
+
+<p style = "color:#082C6F; font-size: 20px !important; font-family: Arial;text-indent: 25px">In this project, I am working with a big data known as the Automatic Identification System (AIS). Modern vessels are equipped with AIS receivers, enabling them to communicate constantly with satellites. This communication allows us to collect real-time location information for vessels. Therefore, establishing a workflow to visualize AIS data in an automated way would certainly provide us with an edge over traditional sailors who relied solely on their experiential knowledge. </p>
+
+<p style = "color:#082C6F; font-size: 20px !important;font-family: Arial;text-indent: 25px">The project I am introducing here was initially started at the request of Korean Navy for the same reason I just mentioned. They have been relying on a somewhat primitive method and were seeking to develop a visualization application that can present AIS data with ease in a more aesthetically pleasing manner. It took a year to complete this project from start to finish. Throughout that period, I encountered bits of information here and there that could be used to visualize AIS data, but there was no single resource that synthesized all of this information together. Therefore, this article aims to fill the gap by introducing various methodological approaches I employed to develop the application in a more comprehensive manner.</p>
+
+<br>
+
+## <span style="color: #7BB6B3; text-transform: uppercase;">Project Outline</span>
+
+<p style = "color:#082C6F; font-size: 20px;font-family: Arial;text-indent: 25px">For those who may not be familiar with the main subject of this project, I will begin by briefly discussing what AIS is and providing an overview of the dataset. Subsequently, I will introduce the visualization techniques I have employed for this project. The analysis methods used can be divided into two main categories: point pattern analysis and line density analysis. I will first delve into the details of the former before transitioning into the latter. The outline of this project is as follows:</p>
+
+<ul style = "color:#7BB6B3; font-size:20px">
+<li><a href="#ais" style = "color: #7BB6B3">What is AIS Data?</a></li>
+<li><a href="#point_pattern" style = "color:#7BB6B3">Point Pattern Analysis</a>
+    <ul>  
+       <li><a href="#workflow1" style = "color: #7BB6B3"> Point Pattern Analysis Workflow</a></li>
+       <li><a href="#kde" style = "color: #7BB6B3"> Kernel Density Estimation (KDE) & Isopleth Mapping</a></li>
+       <li><a href="#choropleth" style = "color: #7BB6B3"> Creating a Choropleth Map</a></li>
+       <li><a href="#morans" style = "color: #7BB6B3"> Anselin Local Moran's I: Cluster and Outlier Analysis</a></li>
+    </ul>   
+<li><a href="#timespace" style = "color: #7BB6B3"> 3D Time-Space Trajectory Analysis </li>
+<li><a href="#animation" style = "color: #7BB6B3"> Animation Visualization </li>
+
+<br>
+
+### <span><a id="#" style="color: #7BB6B3;">Setting Up a Working Environment</a></span>
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px"> Initially, I set up a working environment by importing essential libraries and configuring a working directory. Throughout this project, a wide range of analyses were conducted, resulting in the use of 25 distinct R libraries. If you expand the code tab below, you can see the complete list of these libraries. The dataset imported in this section has been pre-processed using a tool I developed. Further details about this tool will be elaborated on in the later sections.</p>
+```{r, echo=TRUE, message = FALSE, warning = FALSE}
+library(rgdal)
+library(dplyr)
+library(RSQLite)
+library(sf)
+library(ggplot2)
+library(ggblend)
+library(viridis)
+library(ggmap)
+library(gganimate)
+library(osmdata)
+library(RColorBrewer)
+library(ggpubr)
+library(patchwork)
+library(gganimate)
+library(tmap)
+library(units)
+library(gifski)
+library(DiagrammeR)
+library(tidyverse)
+library(rnaturalearth)
+library(RMariaDB)
+library(plotly)
+library(move)
+library(moveVis)
+library(mapview)
+library(Hmisc)
+
+setwd("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization")
+
+Dec_01_NEW_DATA <- read.csv("Dec_01_Cleaned.csv")
+```
+
+## <span><a id="ais" style="color: #7BB6B3; text-transform: uppercase">What is AIS data?</a></span>
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">In this project, I have utilized a dataset known as AIS, which stands for Automatic Identification System. AIS serves as the international standard system for communication between vessels, ground stations, and satellites. Initially developed for military purpose, the system was later adopted by the International Maritime Organization (IMO). Presently large vessels exceeding 300 gross tons (GT) are mandated to transmit their location information to prevent potential collisions.</p> 
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">AIS data consists of both static and dynamic information. The static information include Maritime Mobile Satellite Identity(MMSI), ship name, ship type, and other vessel-specific details. On the other hand, dynamic data includes vessel's current location, timestamp, speed, and course information. Table1 presents the variables utilized in this project along with brief description. Table2 displays the initial rows of AIS data, proving a preview of the data format.</p> 
+
+<br>
+
+<table class="table table-hover" class="center" style="font-size:18px;width:50%">
+  <thead>
+    <tr>
+      <th style="text-align: left">Field Name</th>
+      <th style="text-align: left">Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="text-align: left">MMSI</td>
+      <td style="text-align: left">Maritime Mobile Satellite Identity</td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Timestamp</td>
+      <td style="text-align: left">The time the AIS message was transmitted</td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Longitude</td>
+      <td style="text-align: left">Vessel longitude in degrees</td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Latitude</td>
+      <td style="text-align: left">Vessel latitude in degrees</td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Speed</td>
+      <td style="text-align: left">Speed over ground in knots </td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Course</td>
+      <td style="text-align: left">Course over ground in degrees</td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Name</td>
+      <td style="text-align: left">Vessel name</td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Ship type</td>
+      <td style="text-align: left">Vessel ship and cargo type code</td>
+    </tr>
+  </tbody>
+  <caption style="text-align:center; font-size: 18px">Table 1. AIS data field description </caption>
+</table>
+
+<br>
+
+<table class="table table-hover" style="font-size:18px;">
+  <thead>
+    <tr>
+      <th scope="col">timestamp</th>
+      <th scope="col">mmsi</th>
+      <th scope="col">latitude</th>
+      <th scope="col">longitude</th>
+      <th scope="col">speed</th>
+      <th scope="col">course</th>
+      <th scope="col">shiptype</th>
+      <th scope="col">name</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="table-active">
+      <td>2022-12-01 07:55:43</td>
+      <td>636022401</td>
+      <td>42.761</td>
+      <td>132.711</td>
+      <td>0.3</td>
+      <td>50</td>
+      <td>80</td>
+      <td>ATLANTICA</td>
+    </tr>
+    <tr>
+      <td>2022-12-01 11:21:20</td>
+      <td>536179300</td>
+      <td>35.513</td>
+      <td>129.395</td>
+      <td>0.0</td>
+      <td>220.3</td>
+      <td>70</td>
+      <td>GRACE</td>
+    </tr>
+    <tr class="table-primary">
+      <td>2022-12-01 08:35:23</td>
+      <td>636012808</td>
+      <td>34.089</td>
+      <td>128.462</td>
+      <td>1.4</td>
+      <td>127.8</td>
+      <td>70</td>
+      <td>MSC</td>    
+    </tr>
+  </tbody>
+  <caption style="text-align:center; font-size: 18px">Table 2. AIS data sample </caption>
+</table>
+
+<br>
+
+<table class="table table-hover" style="font-size: 18px">
+  <thead>
+    <tr>
+      <th scope="col">Ship type</th>
+      <th scope="col">No. of positions</th>
+      <th scope="col">Percentage(%)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="table-active">
+      <td>Cargo</td>
+      <td>232,878</td>
+      <td>28.08%</td>
+    </tr>
+    <tr>
+      <td>Tanker</td>
+      <td>85,841</td>
+      <td>10.35%</td>
+    </tr>
+    <tr class="table-primary">
+      <td>Fishing</td>
+      <td>74,568</td>
+      <td>8.99%</td>
+    </tr>
+    <tr class="table-active">
+      <td>Tug</td>
+      <td>41,853</td>
+      <td>5.05%</td>
+    </tr>
+    <tr>
+      <td>Passenger</td>
+      <td>14,740</td>
+      <td>1.78%</td>
+    </tr>
+    <tr class="table-primary">
+      <td>Pilot vessel</td>
+      <td>6,022</td>
+      <td>0.73%</td>
+    </tr>
+    <tr class="table-active">
+      <td>Other</td>
+      <td>149,849</td>
+      <td>18.07%</td>
+    </tr>
+  </tbody>
+  <caption style="text-align:center; font-size: 18px">Table 3. AIS sample summary by type </caption>
+</table>
+
+<br>
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">Table 3 provide a brief summary of the percentage distribution of the AIS data. The Cargo and Tanker categories collectively represent around 40% of the dataset. The 'Other' category, which lacks identifiable static information, accounts for approximately 20%, whereas Fishing, Tug, and Passenger categories combined make up roughly 16% of the data.</p> 
+
+<br>
+
+```{r,echo=TRUE, eval=FALSE ,fig.align='center'}
+
+point_map <- function(df, xmin=121, xmax=136, ymin=31, ymax=43) {
+  
+  library(sf)
+  south <- st_read('/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization',
+                   quiet=TRUE, layer = "SouthKorea")
+  north <- st_read('/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization',
+                   quiet=TRUE, layer = "NorthKorea")
+  
+  ggplot(df) + geom_sf(data=south) + geom_sf(data=north) +
+    geom_point(mapping = aes(x=LONGITUDE, y=LATITUDE, colour=SHIPTYPE), size=0.5) +
+    xlim(min(df$LONGITUDE - 0.5), max(df$LONGITUDE + 0.5)) +
+    ylim(min(df$LATITUDE - 0.5), max(df$LATITUDE + 0.5)) + xlab(NULL) + ylab(NULL) + 
+    xlim(xmin, xmax) + ylim(ymin, ymax)
+  
+}
+
+point_map(Dec_01_NEW_DATA) 
+
+```
+
+```{r, echo=FALSE, out.width="75%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization/img/testing_1234.png")
+```
+
+<p style = "color:#082C6F; font-size: 20px !important; text-indent: 25px;font-family: Arial"> The figure above displays the AIS data around the Korean peninsula as of December 1st, 2022, depicting approximately 1,440,000 data points collected in just a single day. While the initial observation reveals a high volumn of data points all around, it seems challenging to extract any meaningful insights directly from it. In the following discussion, I will explore diverse visualization methods to unearth valuable insights and patterns from this seemingly complex dataset. The investigation into this rich dataset exemplifies the essence of 'data mining,' a process that reveals hidden treasures within data. By delving into the details, you will understand why this field is aptly named 'data mining.'"</p>
+
+### <span><a id="workflow1" style="color: #7BB6B3;">Point Pattern Analysis Workflow</a></span>
+```{r, out.width="85%"}
+library(DiagrammeR)
+
+DiagrammeR::grViz("               
+digraph surveillance_diagram {    # 'digraph' means 'directional graph', then the graph name 
+
+  # graph statement
+  graph [layout = dot,
+         rankdir = LR,            # layout top-to-bottom
+         fontsize = 10]
+
+  # nodes (circles)
+  node [shape = circle,           # shape = circle
+       fixedsize = true
+       width = 1.3]                      
+
+  # Main tree
+  Original  [label = 'Original\nPoint Data'] 
+  Hexagon [label = 'Create hexagon\n(e.g.,20km)'] 
+  Count  [label = 'CountPoints\nin polygon'] 
+  Spatial_concentration [label = 'Concentration\nVisualization']
+  Raster_surface [label = 'Kernel Density\nEstimation']
+  Heat_map [label = 'Heat map', shape =  square, fontcolor=blue, color=blue]
+  Isopleth [label = 'Isopleth map', fontcolor = darkgreen, shape = square,
+  color=darkgreen]
+  
+  #Branch1 : Creating 3D and animation
+  SplitMMSI [label = 'Split by\nMMSI']
+  OrderTime [label = 'Order by\ntimestamp']
+  MovingObject [label = 'Create\nmoving object']
+  ThreeD [label = '3D time-space\ntrajectory\nvisualization', fontcolor = darkgreen,
+  shape = square, color=darkgreen]
+  Animation [label = 'Animation\n(e.g.,gif, mp4)', fontcolor = darkgreen,
+  shape=square, color=darkgreen]
+
+  #Branch2: Spatial autocorrelation
+  Choropleth [label = 'Choropleth\nmap']
+  Auto_cor  [label = 'Anselin\nLocal Morans I', 
+  shape=square, color=orange, fontcolor=orange] 
+
+  # edges
+  Original -> {Spatial_concentration Hexagon SplitMMSI}
+  Spatial_concentration -> Raster_surface
+  Raster_surface -> {Isopleth Heat_map}
+  Hexagon -> Count                      
+  Count -> Choropleth 
+  
+  ## Branch1: 3D and animation                        
+  SplitMMSI -> OrderTime\
+  OrderTime -> MovingObject[label = ' linear\n  interpolation', fontcolor=red]
+  MovingObject -> ThreeD [style = dashed, color = darkgreen]
+  MovingObject -> Animation [style = dashed, color = darkgreen]
+
+  ## Branch2: Spatial Autocorrenation
+  Choropleth -> Auto_cor[label = 'Statistical Validation\nof Spatial Clustering']
+ }
+")
+
+```
+
+### <span><a id="kde" style="color: #7BB6B3;">Kernel Density Estimation(KDE) & Isopleth Mapping</a></span>
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">
+When analyzing point distribution patterns in geographic space, we typically assume that these patterns are generated by an unknown distribution f(x) rather than by a Gaussian distribution. In this study, Kernel Density Estimation (KDE) was utilized to estimate the density distribution of AIS data. This method computes a continuous probability density distribution using a kernel density function defined as:</p>
+
+><span style="font-size: 20px; color: #082C6F;"> $\hat{f}(x)$ = $\hat{f}(x,y)$ = $\displaystyle \frac{1}{nh_{x}nh_{y}}\sum_{i}^{n}k\left[\frac{x-x_{i}}{h_{x}},\frac{y-y_{i}}{h_{y}}\right]$</span>
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">
+The equation shown above initially generates kernel functions $k\left[\frac{x-x_{i}}{h_{x}},\frac{y-y_{i}}{h_{y}}\right]$around the observed data points. Subsequently, the sum of all relevant kernel functions is divided by the total number of data points, resulting in a probability density distribution function. Within the equation, '$x$' and '$y$' represent random variables, while '$x_{i}$' and '$y_{i}$' denote the observed data points. The parameter '$h$' in the equation signifies the bandwidth and is used to smooth probability density function. Smaller bandwidths tend to produce a more spiky distribution, whereas larger bandwidths tend to produce more flattened distribution.</p>
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">
+One of the most challenging and crucial tasks of estimating a kernel density is determining the appropriate bandwidths ($h_{x}$, $h_{y}$) for a given dataset. In this project, a method proposed by Bowman and Azzalini(1997) was selected due to its simplicity and ease of application. The examples presented here were generated using a different algorithm in R; however the chosen method was employed in the actual project. The mathematical equation for this approach is as follows:</p>
+
+><span style="font-size: 20px; color: #082C6F;"> $\displaystyle h_{x} = \sigma_{x}(\frac{2}{3n})^{\frac{1}{6}}$ $\displaystyle h_{y} = \sigma_{y}(\frac{2}{3n})^{\frac{1}{6}}$</span> 
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">
+In the equation, ('$\sigma_{x}$', '$\sigma_{y}$') represent the standard deviation of x and y, whereas n denotes the total number of observation in the dataset. </p> 
+
+
+```{r, echo=TRUE, eval=FALSE}
+contour_map <- function(df, xmin=121, xmax=136, ymin=31, ymax=43) {
+  
+  south <- st_read('/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization',
+                   quiet=TRUE, layer = "SouthKorea")
+  north <- st_read('/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization',
+                   quiet=TRUE, layer = "NorthKorea")
+  
+  df <- df %>% filter(LONGITUDE > xmin & LONGITUDE < xmax & LATITUDE > ymin & LATITUDE < ymax)
+  
+  ggplot(data = df) + geom_sf(data=south) + geom_sf(data=north) +
+    geom_density_2d(mapping = aes(x=LONGITUDE, y=LATITUDE, alpha=0.7), lwd=0.1) +
+    geom_density_2d_filled(mapping = aes(x=LONGITUDE, y=LATITUDE, alpha=0.7)) +
+    xlim(xmin, xmax) + ylim(ymin, ymax) +
+    theme(legend.position = "none")
+  
+}
+
+point_map(Dec_01_NEW_DATA, xmin=125, xmax=128, ymin=32.5, ymax=34 ) # point map around Jeju Island
+contour_map(Dec_01_NEW_DATA, xmin=125, xmax=128, ymin=32.5, ymax=34) # KDE & contour map around Jeju Island
+```
+
+```{r, echo=FALSE, out.width="75%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization/img/jeju_point.png")
+```
+
+```{r, echo=FALSE, out.width="75%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization/img/jeju_kde_contour.png")
+```
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">In this visualization, both the point map and KDE (Kernel Density Estimation) map are presented simultaneously. The point map renders AIS data as discrete points, while KDE creates a continuous raster surface. In general, the point map method struggles with identifying clear clustering patterns, especially as the number of points increases. In contrast, the KDE technique effectively reveals the intrinsic clustering patterns within the dataset, regardless of the number of points present.</p>    
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">Additionally, leveraging KDE output to generate contour lines introduces another interesting way of visualizing point density patterns. Since KDE results in a continuous raster surface, it enables the creation of iso-lines by connecting pixels of identical estimated values, thus producing a contour map (or isopleth map) of AIS data. As the figure above clearly shows, overlying the contour map over the KDE could significantly enhance the visibility of point clustering patterns. The final composite map highlights the northern and western regions of Jeju Island and the interconnecting corridor as the most dominant hotspots of AIS traffics.</p>
+
+### <span><a id="choropleth" style="color: #7BB6B3;">Creating a Choropleth Map</a></span>
+```{r, echo = TRUE, eval = FALSE}
+choropleth_map <- function(df, cell_size=50, square=FALSE, interactive = FALSE) {
+  
+  ais_df_test <- df %>% filter(!is.na(LONGITUDE) & !is.na(LATITUDE)) %>%
+    st_as_sf(coords = c("LONGITUDE","LATITUDE"), crs = 4326 , remove = FALSE)
+  
+  #converting AIS dataframe into st_geometry() and transform its projection
+  ais_df_test <- ais_df_test %>% st_set_crs(4326) %>% st_transform(3857)
+  
+  #Creating hex grid; for now I am using 70*1000 as a cell size; EPSG3857 is in meter, therefore 70*1000 means 70 km
+  grd <- st_make_grid(ais_df_test, cell_size*1000, square=square, flat_topped = TRUE)
+  
+  # To sf and add grid ID
+  fishnet_grid_sf = st_sf(grd) %>%
+    # add grid ID
+    mutate(grid_id = 1:length(lengths(grd)))
+  
+  # intersect fishnet grid and AIS point data, then counting how many points there are per cell
+  fishnet_grid_sf$n_colli = lengths(st_intersects(fishnet_grid_sf, ais_df_test))
+  
+  # remove grids whose values are 0 (i.e. no points in side that grid)
+  fishnet_count = filter(fishnet_grid_sf, n_colli > 0)
+  
+  if(interactive == FALSE){
+    
+    ggplot() +
+      geom_sf(data=fishnet_count, aes(fill=n_colli), color="gray", lwd=0.1) +
+      theme_bw() + scale_fill_viridis_c(option="D", alpha=0.5, direction=-1) +
+      geom_sf(data=south) + geom_sf(data=north)
+    
+  } else if (interactive == TRUE) {
+    
+    tmap_mode("view")
+    
+    map_fishnet = tm_shape(fishnet_count) +
+      tm_fill(
+        col = "n_colli",
+        palette = "YlOrRd",
+        style = "cont",
+        title = "Number of AIS points",
+        id = "grid_id",
+        showNA = FALSE,
+        alpha = 0.5,
+        popup.vars = c("Number of AIS: " = "n_colli"),
+        popup.format = list(n_colli = list(format = "f", digits = 0))) +
+      tm_borders(col = "grey40", lwd = 0.1)
+    
+    map_fishnet
+  }
+}
+
+size_30_km <- choropleth_map(Dec_01_NEW_DATA, cell_size=30, square=FALSE, interactive=FALSE) # interactive=FALSE
+size_50_km <- choropleth_map(Dec_01_NEW_DATA, cell_size=50, square=FALSE, interactive=FALSE) # interactive=FALSE
+
+choropleth_three_combined <- patchwork(size_30_km, size_50_km, ncol=2)
+```
+
+```{r, echo=FALSE, out.width="75%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization/img/choropleth_three_combined.png")
+```
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">Choropleth mapping was also employed as an additional way to visualize AIS data. While this method shares similarities with the preceding techniques, what distinguishes choropleth mapping is its simplicity and intuitiveness. Although primarily serving as a preliminary step to the Moran's I analysis in this project, choropleth mapping is a noteworthy tool for visualizing spatial data. To maintain brevity, a detailed discussion of this method is omitted here. Instead, this article focuses on presenting the step-by-step process for creating a choropleth map in R:</p>        
+
+<ol style = "color:#082C6F; font-size:20px">
+<li>Generate a hexagon grid over AIS data points in the study area</li>
+   <ul>  
+       <li>the figure above used the hexagon size of 30km and 50 km, respectively</li>
+   </ul>
+<li>Use spatial join method to count the number of points within each hexagon</li>
+<li>Choose a data classification method (i.e., natural break, standard deviation, equal interval, quantile, etc.)</li>
+<li>Determine the number of breaks</li>
+<li>Pick a sequential color palette of your choice and visualize the results</li>
+</ol>
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">The choropleth map above reveals the higher volume of AIS signals in the vicinity of major ports around South Korea. We can see that most dominant clusters are formed around Busan, Incheon, and Jeju port, etc. However, this map alone does not provide conclusive evidence to determine if the observed clustering pattern holds statistical significance, nor does it explain the extent to which similar features are clustered or dispersed. This is where Moran's I analysis proves valuable, with its methodological approach set to be explored in the subsequent section.</p>
+
+### <span><a id="morans" style="color: #7BB6B3;">Anselin Local Moran's I: Cluster and Outlier Analysis</a></span>
+
+><p style = "color:#7BB6B3; font-weight: bold;"> "The first law of geography: Everything is related to everything else, but near things are more related than distant things."<br> 
+<p style = "color:#7BB6B3">&ndash; Waldo R. Tobler (Tobler 1970)</p>
+
+#### <span style="color: #7BB6B3; font-size: 22px;">Global Moran's I Analysis</span>
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">
+Moran's I analysis is one of the most widely employed methods for evaluating spatial autocorrelation, which assesses how a variable correlates with itself across geographic space. By capturing the extent to which similar features are clustered in space, Moran's I directly reflects the First Law of Geography: 'Everything is related to everything else, but near things are more related than distant things.'</p>
+
+<p style = "color:#082C6F; font-size: 20px;">The equation for the Global Moran's I equation can be expressed as:</p>
+
+><span style="font-size: 20px; color: #082C6F;">$I$ = $\displaystyle\frac{N}{\sum_{i}(X_{i}-\overline{X})^{2}}\frac{\sum_{i}\sum_{j}w_{ij}(X_{i}-\overline{X})(X_{j}-\overline{X})}{\sum_{i}\sum_{j}w_{ij}}$</span> 
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px"> In the equation, $N$ denotes the total number of regions, and $X_{i}$ represents the value of interest in region $i$. $\overline{X}$ signifies the mean of all value, while $w_{ij}$ denotes a spatial weight between feature $i$ and $j$ in the dataset.</p>
+
+```{r, echo=TRUE, eval=TRUE, message=FALSE, warning=FALSE, out.width="75%", fig.align='center'}
+# 1) Turning data frame into sf object with also assigning crs=4326
+ais_df_moran <- Dec_01_NEW_DATA %>% filter(!is.na(LONGITUDE) & !is.na(LATITUDE)) %>%
+  st_as_sf(coords = c("LONGITUDE","LATITUDE"), crs = 4326 , remove = FALSE)
+
+# 2) re-projecting layer to EPSG 3857
+ais_df_moran <- ais_df_moran %>% st_set_crs(4326) %>% st_transform(3857)
+
+#Creating hex grid; for now I am using 70*1000 as a cell size; EPSG3857 is in meter, therefore 70*1000 means 70 km
+grd <- st_make_grid(ais_df_moran, 50*1000, square=FALSE, flat_topped = TRUE)
+
+# To sf and add grid ID
+fishnet_grid_sf = st_sf(grd) %>%
+  # add grid ID
+  mutate(grid_id = 1:length(lengths(grd))) 
+
+# intersect fishnet grid and AIS point data, then counting how many points there are per cell
+fishnet_grid_sf$n_colli = lengths(st_intersects(fishnet_grid_sf, ais_df_moran)) 
+fishnet_grid_sf <- fishnet_grid_sf %>% filter(n_colli > 0)  #lengths(st_intersects(fishnet_grid_sf, ais_df_moran)) 
+fishnet_grid_sf$n_colli_log = log(fishnet_grid_sf$n_colli) #log-transform
+
+test_poly <- fishnet_grid_sf
+
+library(spdep)
+
+nb <- poly2nb(test_poly, queen=TRUE)
+nbw <- nb2listw(nb, style="W", zero.policy = TRUE)
+
+#drawing neighborhood connection map: spatial: neightborhood based on contiguity
+par(mar=c(.5,.5,.5,.5))
+plot(st_geometry(test_poly), border = "lightgray")
+plot.nb(nb, st_geometry(test_poly) ,add=TRUE, lwd=0.4)
+
+```
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">The mathematical equation demonstrates that Moran's I index is fundamentally a measure of covariation between a value of interest and its spatially lagged mean. However, before the index can be computed, it is necessary to establish a clear definition of what constitutes a neighbor. One method defines a neighbor based on contiguity, while other methods rely on a distance threshold or the number of nearest neighbors. In this project, we have adopted a definition based on contiguity, an example of this is shown in the figure above.</p> 
+
+```{r, echo=TRUE, eval=TRUE, message=FALSE, warning=FALSE, out.width="60%", fig.align='center'}
+par(mar=c(4.3,4.3,0.5,4.3))
+moran.plot(test_poly$n_colli_log, nbw, xlab="AIScount", ylab="AIScount_lagged")
+```
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">I began by creating a uniform-sized hexagon (e.g., 100 km) over the study area and then counted the number of AIS points for each hexagon using a spatial join method, a robust technique for summarizing data based on spatial relationships. The next step involved computing spatially lagged means ($AIScount_{lagged}$) for each hexagon, which were then used to generate a bivariate Moran's I plot shown above. The plot shows a best-fit line from OLS regression, where the slope represents the Moran's I coefficient indicating the degree of relationship between $AIScount$ and $AIScount_{lagged}$. A preliminary look at this plot suggests a strong positive relationship between the two variables, indicating that higher counts tend to be surrounded by other higher counts, and vice versa for lower counts.</p>
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">However, this plot alone does not provide enough evidence on whether this observed Moran's I statistic significantly differs from 0. To further support this statistically, we employed a Monte Carlo approach. Under the the assumption of independence among observations, the Monte Carlo method randomizes spatial patterns by reassigning the attribute values among the hexagons first, and a Moran's I index is calculated for every permutation. The resulting sampling distribution is then compared with the observed Moran's I value to test if the assumption of no spatial auto-correlation can be rejected.</p>
+
+```{r, echo=TRUE, eval=TRUE, message=FALSE, warning=FALSE, out.width="60%", fig.align='center'}
+gmoranMC <- moran.mc(test_poly$n_colli_log, nbw, nsim = 4999, zero.policy = TRUE)
+gmoranMC 
+
+par(mar=c(4.3,4.3,0.5,4.3))
+hist(gmoranMC$res, breaks=300, border="grey", main = NULL, xlab="Moran's I Values via Monte Carlo Simulation", ylab = NULL)
+abline(v = gmoranMC$statistic, col = "red")
+```
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">After running 4,999 Monte Carlo simulations, the results reveal that our observed statistic is extremely unlikely to occur under the assumption of no spatial-autocorrelation (p-vlaue = 0.0002). A p-value of 0.0002 means a mere 0.02% chance of making an error in rejecting the null hypothesis. By the way, the smallest possible p-value one can get from running 4,999 simulations is 1/(4999+1), which is essentially same as what we got from this experiment. In other words, the Monte Carlo simulation in this case did not produce any values that are more extreme than the observed. Consequently, we can confidently assert that our observed clustering pattern is indeed statistically significant.</p> 
+
+#### <span style="color: #7BB6B3; font-size: 22px;">The Local Indicators of Spatial Association</span>
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">Though the Global Moran's I is a valuable tool for examining overall patterns of spatial autocorrelation, this approach is limited because it does not uncover local variations within the dataset. In other words, Global Moran's I does not indicate where within the dataset local clustering patterns are most pronounced, nor does it highlight areas that deviate significantly from the general trend. This is where the Local Indicators of Spatial Association (LISA) method is proven to be instrumental. Simply put, the LISA complements Global Moran's I by helping us to identify statistically meaningful local clusters and spatial outliers, thus this method is also called 'cluster and outlier analysis.'</p> 
+
+<p style = "color:#082C6F; font-size: 20px;">The equation for LISA can be expressed as:</p>
+
+><span style="font-size: 20px; color: #082C6F;">$I_{i}$ = $\displaystyle\frac{n(Y_{i}-\overline{Y})}{\sum_{j}(Y_{j}-\overline{Y})^{2}}\sum_{j}w_{ij}(Y_{j}-\overline{Y})$</span> 
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">In the equation above, $n$ denotes the total number of neighbors, and $Y_{i}$ represents the value of interest in region $i$. $\overline{Y}$ signifies the mean of all neighbors, while $w_{ij}$ denotes a spatial weight between feature $i$ and $j$ in a given neighborhood.</p>
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">One of the special properties of Global Moran's I is that it can be broken down into a series of local statistics. Put differently, the Global Moran's I is the sum of all local Moran's I coefficients divided by the sum of standardized weights as the equation below indicates.</p>     
+
+><span style="font-size: 20px; color: #082C6F;">$I$ = $\displaystyle\frac{1}{\sum_{i \neq j}w_{ij}}\sum_{i}I_{i}$</span> 
+
+```{r, echo=TRUE, eval=TRUE, message=FALSE, warning=FALSE, out.width="60%", fig.align='center'}
+lmoran <- localmoran(test_poly$n_colli_log, nbw, alternative = "two.sided", zero.policy = TRUE)
+
+tmap_mode("view")
+
+test_poly$lmI <- lmoran[,"Ii"]
+test_poly$lmZ <- lmoran[,"Z.Ii"] #z-score
+test_poly$lmp <- lmoran[,"Pr(z != E(Ii))"]
+
+tm_shape(test_poly) + tm_polygons(col = "lmI", title="Local Moran's I", style="quantile", alpha=0.5, lwd=0.05) + tm_layout(legend.outside = TRUE)
+```
+
+<br>
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">Once the local Moran's I is computed for the dataset, its resulting values can be visualized on a map, which then can help identify the local clustering patterns of similar values. In the map above, the resulting Moran's I values range between -1.670 and 3.467. Higher Moran's I values suggest that areas have similar neighbors in their vicinity, while lower Moran's I statistics implies that areas have dissimilar neighbors around them. At this point, this map alone cannot reveal if such areas are clusters of high, low, or moderate values, nor does it offer any conclusive evidence on whether such patterns are statistically meaningful - an aspect which will be discussed in the following section.</p>         
+
+```{r, echo=TRUE, eval=TRUE, message=FALSE, warning=FALSE, out.width="60%", fig.align='center'}
+tm_shape(test_poly) + tm_polygons(col = "lmp", title="p-value", breaks = c(-Inf, 0.05, Inf), alpha=0.5, lwd=0.05) + tm_layout(legend.outside = TRUE)
+```
+
+<br>
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">Similar to what was done with the Global Moran's I method, Monte Carlo simulation method can be employed for computing pseudo p-values for LISA. However,in this case, a value of interest at region i - $Y_{i}$ - is fixed while we shuffle all other values in the dataset - thus known as a 'conditional randomization.' At each permutation we can compute a local Moran's I value, and when this process is repeated for a given number of times, a distribution of local Moran's I can be generated under the null hypothesis of no spatial association. Subsequently, a p-value is the probability of observing more extreme Moran's I values than the observed one for a given hexagon. If we carry out Monte Carlo simulation for all hexagons, we can compute pseudo p-values for all hexagons in the study area. In the map above, the hexagons colored with light beige are the regions where the probability of getting more extreme values than the observed by random chance are less than 5 %, thus it is safer to conclude that there are some statistically significant local clustering patterns in our study area.</p>    
+
+<p style = "color:#082C6F; font-size: 20px;">Lastly, the final Local Moran's I map is produced by employing the categorization scheme below:</p> 
+
+<ol style = "color:#082C6F; font-size:20px">
+<li>A hexagon is categorized as "high-high" if both $AIScount$ and $AIScount_{lagged}$ are above average with a significant p-value</li>
+<li>A hexagon is categorized as "low-low" if both $AIScount$ and $AIScount_{lagged}$ are below average with a significant p-value</li>
+<li>A hexagon is categorized as "high-low" if $AIScount$ is above average while $AIScount_{lagged}$ is below average with a significant p-value</li>
+<li>A hexagon is categorized as "low-high" if $AIScount$ is below average while $AIScount_{lagged}$ is above average with a significant p-value</li>
+<li>A hexagon is categorized as "non-significant" if a p-value is not significant</li>
+</ol>
+
+```{r, echo=FALSE, eval=TRUE, fig.keep='none', message=FALSE, warning=FALSE, out.width="60%", fig.align='center'}
+lmoran <- 
+  localmoran(test_poly$n_colli_log, nbw, alternative = "two.sided", zero.policy = TRUE)
+
+test_poly$lmp <- lmoran[,5]
+
+mp <- moran.plot(as.vector(scale(test_poly$n_colli_log)), nbw, zero.policy = TRUE)
+```
+
+```{r, echo=TRUE, eval=TRUE, message=FALSE, warning=FALSE, out.width="60%", fig.align='center'}
+test_poly$quadrant <- NA
+
+#high-high
+test_poly[(mp$x >= 0 & mp$wx >= 0) & (test_poly$lmp <= 0.05), "quadrant"] <- 1
+
+#low-low
+test_poly[(mp$x <= 0 & mp$wx <= 0) & (test_poly$lmp <= 0.05), "quadrant"] <- 2
+
+#high-low
+test_poly[(mp$x >= 0 & mp$wx <= 0) & (test_poly$lmp <= 0.05), "quadrant"] <- 3
+
+#low-high
+test_poly[(mp$x <= 0 & mp$wx >= 0) & (test_poly$lmp <= 0.05), "quadrant"] <- 4
+
+#non-significant
+test_poly[(test_poly$lmp > 0.05), "quadrant"] <- 5
+
+
+#Drawing interactive map with tm package
+tm_shape(test_poly) + tm_fill(col = "quadrant", title = "", breaks = c(1,2,3,4,5,6),
+                              palette = c("red", "blue", "lightpink", "skyblue2", "white"),
+                              labels = c("High-High", "Low-Low", "High-Low", "Low-High", "Non-significant"), alpha=0.4) +
+  tm_legend(text.size=1) + tm_borders(alpha=0.5, lwd=0.05) + tm_layout(frame=FALSE, title = "Clucters") + tm_layout(legend.outside = TRUE)
+```
+
+<br>
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">
+In the map above, the 'high-high' category (colored with red) represents areas where high values are surrounded by other high values while the 'low-low' category (colored with blue) indicates regions where low values are neighboring other low values. The 'low-high' and 'high-low' categories are used to identify outliers - the former highlights areas of low values with neighbors of high values and vice versa for the latter.</p>
+
+## <span><a id="timespace" style="color: #7BB6B3; text-transform: uppercase">3D Time-Space Trajectory Analysis</a></span>
+
+```{r,  echo=TRUE, eval=TRUE, message=FALSE, warning=FALSE, fig.height=7, fig.width=10, fig.align='center'}
+
+#1) Extract 4 paths to be visualized
+count <- Dec_01_NEW_DATA %>% group_by(MMSI) %>% count() %>% arrange(desc(n))
+ais_3d <- Dec_01_NEW_DATA
+ais_3d$MMSI <- as.character(ais_3d$MMSI)
+tracks_3d <- ais_3d %>% filter(MMSI == "636020542_0"|MMSI == "352002128_0"|MMSI == "636012808_0"|MMSI == "432596000_0")
+
+#2) Defininfg timestamp field as it will be used as a z-axis in the 3d visualization
+tracks_3d$TIMESTAMP <- as.POSIXct(tracks_3d$TIMESTAMP, format = "%Y-%m-%d %H:%M:%S", tz = "UTC")
+
+#3) Arranging the dataset by MMSI and TIMESTAMP
+tracks_3d <- tracks_3d %>% arrange(MMSI, TIMESTAMP)
+
+#4) Finally 3D visualization
+fig_4paths <- plot_ly(tracks_3d, x = ~LONGITUDE, y = ~LATITUDE, z = ~TIMESTAMP, type = 'scatter3d', color = ~MMSI,
+                      mode = 'lines') %>% add_markers(color=~MMSI, size = I(15)) %>%
+  layout(scene = list(xaxis = list(title = 'Longitude'),
+                      yaxis = list(title = 'Latitude'),
+                      zaxis = list(title = "Time")))
+
+fig_4paths
+
+```
+
+<br>
+<br>
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px"> Generally, a space-time trajectory plot is used to visualize the movement of objects or individuals in both time and space simultaneously. This technique, by adding a time dimension to a plot, effectively visualizes movement in 3 dimensional space. For example, in the figure above, the horizontal axis represents Cartesian coordinate space while the vertical axis represent a temporal dimension. The trajectories of four individual vessels are displayed in the plot, and we can clearly observe how the locations of those vessels progress over time. </p>          
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">Specifically, the orange-colored trajectory in the figure above displays the movement of "432596000_0" on 2022-Dec-01. The plot shows that at 00:00:43 am this vessel departed from its initial location of (131.4158, 33.85168). After making several small and large turns over time, it reached its final coordinate of (130.1209, 32.74085) around midnight. Such rich information would not have been uncovered without the utilization of time-space trajectory plot. To put it differently, time-space plot definitely offers a more holistic representation of vessels' movement by integrating space and time dimensions.</p>  
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">However, a space-time trajectory is not without limitations. For instance, if we display too many vessels simultaneously on a plot, it may obscure the very patterns we are trying to uncover. Therefore, caution must be exercised to determine the appropriate number of vessels to display on a single plot. Despite this, I believe that its advantages far outweigh its shortcomings, and its potential applications in maritime traffic control are promising. It can help us understand changes in temporal clustering patterns, peak activity times, traffic flow, congestion points, etc. I am hopeful that these valuable insights can be applied to improve service provision, planning, policy implementation, and other decision making processes.</p>
+
+## <span><a id="animation" style="color: #7BB6B3; text-transform: uppercase">Animation Visualization</a></span>
+
+```{r, echo=TRUE, eval=FALSE, warning=FALSE, message=FALSE}
+
+ais_animation <- function(df, xmin=121, xmax=136, ymin=31, ymax=43) {
+  
+  #Calling necessary libraries
+  library(ggplot2)
+  library(gganimate)
+  
+  #Defining a data frame and selecting necessary fields
+  ais_df <- df
+  tracks <- ais_df %>% dplyr::select(LONGITUDE, LATITUDE, MMSI, TIMESTAMP, SHIPNAME, SPEED, SHIPTYPE)
+  
+  #Casting a timestamp field from character to POSIXct
+  tracks$TIMESTAMP <- parse_date_time(tracks$TIMESTAMP, "Ymd HMS")
+  
+  #Re-arranging tracks data by timestamp for each mmsi
+  tracks_ordered <- tracks %>% arrange(MMSI, TIMESTAMP)
+  
+  #Deleting duplicate timestamp records
+  tracks <- tracks_ordered[!duplicated(tracks_ordered[,c("TIMESTAMP")]),]
+  
+  #Casting MMSI field from integer to factor
+  tracks$MMSI <- as.factor(tracks$MMSI)
+  
+  #Filtering data - ships that has greater than 10 location points
+  count <- tracks %>% group_by(MMSI) %>% count() 
+  tracks <- inner_join(tracks, count, by = "MMSI") %>% filter(n > 10)
+  
+  #Creating a Large MoveStack data
+  mdata <- move(x=tracks$LONGITUDE, y=tracks$LATITUDE, time=tracks$TIMESTAMP, 
+                data=tracks, proj = CRS("+proj=longlat +ellps=WGS84"),
+                animal=tracks$MMSI)
+  
+  #Aligning movement data to a uniform time scale with a uniform temporal resolution throughout the data
+  m <- align_move(mdata, res=5, digit=0, unit="mins", spaceMethod = "greatcircle")
+  
+  #Casting Large MoveStack data into a data.frame again
+  tracks <- as.data.frame(m)
+  
+  #Producing an animation plot using ggplot and gganimate (original one)
+  ggplot() + geom_sf(data=south) + geom_sf(data=north) +
+    geom_point(data = tracks, aes(x=x,y=y, group=trackId, colour=trackId), alpha = 0.7, shape=20) +
+    theme(legend.position = 'none') + transition_time(time) + labs(title = "Time: {frame_time}") +
+    shadow_mark(alpha = 0.3, size = 0.5) + xlim(xmin, xmax) + ylim(ymin, ymax)
+  
+}
+
+```
+
+#### <span style="color: #7BB6B3; font-size: 22px;">AIS animation for Korean Peninsula with the shadow_mark effect</span>
+
+```{r, echo=TRUE, eval=FALSE, message=FALSE, warning=FALSE}
+ais_animation(Dec_01_NEW_DATA) #showing entire study area
+ais_animation(Dec_01_NEW_DATA, xmin=126, xmax=132, ymin=32, ymax=36) #Showing only the south east region of South Korea
+ais_animation(Dec_01_NEW_DATA, xmin=122, xmax=128, ymin=35, ymax=38) #Showing only the west region of South Korea
+```
+
+```{r, echo=FALSE, out.width="50%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization/img/korea_alltracks_shadow_mark2022_dec_01.gif")
+```
+
+#### <span style="color: #7BB6B3; font-size: 22px;">AIS animation around Busan with the shadow_wake effect </span>
+
+```{r, echo=FALSE, out.width="50%", fig.align='center'}
+knitr::include_graphics("/Users/dongheekoh/Documents/Data Science Training/portfolio/projects/AIS_visualization/img/south_shadow_wake_colorful.gif")
+```
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">There isn't a one-size-fits-all solution. While a certain method may excel in emphasizing a particular aspect of a dataset, it invariably involves trade-offs. Therefore, having a wide array of tools at your disposal is advantageous, allowing for the selection of the most tailored solution for the problem at hand. In this context, I would like to introduce the method of animation visualization.</p> 
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">Both 2D points and  time-space trajectory maps are not most suitable for visualizing vessels' speed or heading. As previously discussed, a time-space trajectory approach is effective only for visualizing a smaller number of vessels at a time. In contrast,  the animation method overcomes these limitations by enabling us to observe the movement patterns of a large number of vessels from an omniscient point of view all at once as they unfold across the dimension of time.</p>
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">As appealing as this approach may sound, there are still a few challenges to overcome. One significant hurdle arises from the irregular time interval at which the original AIS data are collected. Factors such as distances to nearby stations, vessel-to-vessel distances, traffic density, and other variables are known to cause such inconsistency. This problem poses a major challenge in reconstructing vessels' continuous paths, which is a crucial preliminary step for generating an animation plot.</p>
+
+<p style = "color:#082C6F; font-size: 20px; text-indent: 25px">To address this issue, I employed a linear point interpolation technique. This method interpolates points at a regular time interval based on the known locations. After this, frames of 5-minutes time interval were generated and merged to create the final animation plot. For animation effects, I utilized the 'shadow_mark' and 'shadow_wake' methods available in gganimate library. The shadow_mark method displays all past point traces in a plot, while the shadow_wake method visualizes preceding frames with a gradual fall off. Examples of both techniques are demonstrated above.</p>
+<br>
+<br>
+
+
+
+
+
