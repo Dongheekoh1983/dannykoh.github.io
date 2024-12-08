@@ -155,7 +155,7 @@ digraph surveillance_diagram {    # 'digraph' means 'directional graph', then th
   categorical [label = 'Categorical \n variables', shape = rect,  fontcolor='#3caea3' color='#3caea3']
   reorder [label = 'Reorder\nordinal\nvariables', shape = rect,  fontcolor='#3caea3' color='#3caea3']
   one_hot [label = 'One-Hot\nEncoding', shape = rect,  fontcolor='#3caea3' color='#3caea3']
-  training_set [label = '70%\n training nset', shape = rect,fontcolor='#3caea3' color='#3caea3']
+  training_set [label = '70%\n training set', shape = rect,fontcolor='#3caea3' color='#3caea3']
   testing_set  [label = '30% \ntesting\nvalidation set', shape = rect,  fontcolor='#3caea3' color='#3caea3']
   standardize [label = 'Standardize\nthe dataset', shape = rect,  fontcolor='#3caea3' color='#3caea3']
   eda [label = 'EDA', shape=oval, height=1.1, fontcolor='#20639b', color='#20639b']
