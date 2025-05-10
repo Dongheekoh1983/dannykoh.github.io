@@ -4,7 +4,7 @@ output:
   html_document:
     theme: journal
     df_print: paged
-    code_folding: hide
+    code_folding: show
   pdf_document: default
 ---
 
@@ -45,10 +45,17 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ><p style = "color:#7BB6B3; font-weight: bold;">ML vs. DNN in Housing Price Prediction</p>
 
-<br>
+<p style = "color:#082C6F; font-size: 20px !important; font-family: Arial;text-indent: 25px">
+In recent years, the field of Machine Learning has undergone rapid transformation, propelled by technological advancements and the increasing availability of data. The advent of the internet has ushered in an unprecedented influx of big data, while ongoing developments in analysis techniques are reshaping the landscape of this discipline. To be more specific, this evolution has spurred the exponential growth of diverse Machine Learning algorithms, ranging from traditional regression to state-of-the-art deep learning approaches. Despite this diversification, all these methods still share a common goal: to enhance our understanding of the world and to predict future events with greater accuracy.</p>
 
 <p style = "color:#082C6F; font-size: 20px !important; font-family: Arial;text-indent: 25px">
-Introduction paragraph will be included which will briefly introduce what this project is about. What datasets we used? What machine learning algorithms we utilized. What deep learning algorithm I have used and how I try to improve its performance using hyperparameter tuning. Brief description of study results.</p>
+As Machine Learning techniques continue to expand, understanding their distinct functionalities and differences becomes essential for selecting the best suited models for various problems and applications. Therefore, this project aims to demonstrate the process of choosing optimal ML models by addressing the real-world problem of predicting housing prices using two well-known datasets, namely Ames and Boston. </p>
+
+<p style = "color:#082C6F; font-size: 20px !important; font-family: Arial;text-indent: 25px">
+Despite Machine Learning's ability to automate many tasks traditionally performed by humans, selecting the best performing ML models still involves meticulous data pre-processing and thoughtful analysis design. In the following section, I will begin by comprehensively covering the process of data cleaning and transformation - arguably the most critical step for any successful ML project. This will be followed by Exploratory Data Analysis(EDA), where I will focus on descriptive statistics, data visualization, and GIS analysis. In the third section, I will compare the performance of various machine learning methods. The ML algorithms employed in this study can be broadly categorized into four groups: regression-based(i.e., Multiple Linear Regression), regularization-based(i.e., Lasso, Ridge, and Elastic Net), tree-based(i.e., Random Forest, Bagging), and dimension-reduction-based(i.e., PCR, PLSR). </p>
+
+<p style = "color:#082C6F; font-size: 20px !important; font-family: Arial;text-indent: 25px">
+Deep Learning, a subset of Machine Learning, is distinguished by its use of multi-layered neural networks to learn data representations at various levels of abstraction. Deep Learning is commonly known for its boosted performances, so in the fourth section, I will measure Deep Learning's performance against all other ML methods used in the previous section. Finally, in the last section, I will repeat the entire process using Boston housing dataset to test the generalizability of the methodological approach demonstrated in this project.</p>
 
 <br>
 
@@ -69,8 +76,7 @@ Introduction paragraph will be included which will briefly introduce what this p
 
 <br>
 
-## <span><a id="#" style="color: #7BB6B3;">Setting Up a Working Environment</a></span>
-```{r, echo=TRUE, message = FALSE, warning = FALSE}
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
 #Bringing necessary library
 library(dplyr) 
 library(ggplot2)
@@ -101,14 +107,14 @@ library(tidyverse)
 library(ggmap)
 library(sf)
 library(RColorBrewer)
-library(dplyr)
 library(DiagrammeR)
-
 
 ```
 
 ## <span><a id="data" style="color: #7BB6B3; text-transform: uppercase">Dataset Description</a></span>
-<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">Paragraph about dataset description - Ames Housing Dataset and Boston Housing Dataset</p> 
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">For this project, I have primarily utilized the Ames Housing Dataset, which was originally compiled from the Ames Assessor???s Office. It contains records of residential property sales in Ames, Iowa from 2006 to 2010. The dataset includes 2,930 observations across 82 variables, which can be categorized into 20 continuous, 14 discrete, 23 ordinal, and 23 categorical variables. These variables cover a wide range of details that potential home buyers might consider, from neighborhood and zoning to specific housing features like external condition, number of bathrooms, heating systems, kitchen quality, etc.</p>
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">However, not all these variables significantly contribute to predicting housing prices. Therefore, for this dataset, I believe feature engineering is an essential step to be performed for enhancing the predictive power of machine learning models, a process I will detail in the subsequent section. Additionally, I have also utilized the Boston Housing Dataset which is relatively much smaller and simpler than the Ames Housing Dataset. Yet, I believe this contrast makes Boston Housing Dataset an ideal candidate for testing the generalizability of the methodological approaches that I set out to demonstrate in this project. In other words, if this approach works effectively for both datasets, it would suggest that with minimal modifications, the same approach could be  successfully adapted for similar Machine Learning projects.</p>
 
 ```{r,echo=TRUE, eval=TRUE ,fig.align='center'}
 #Brining Ames Housing dataset
@@ -187,9 +193,8 @@ digraph surveillance_diagram {    # 'digraph' means 'directional graph', then th
 
 ```
 
-
-<br>
-<p style = "color:#082C6F; font-size: 20px">Before developing statistical models, the original dataset needed to be pre-processed by employing the following steps:</p> 
+## <span><a id="preprocess" style="color: #7BB6B3; text-transform: uppercase">Data Pre-processing</a></span>
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">Before developing statistical models, the original dataset needed to be pre-processed by employing the following steps:</p> 
 <ol style = "color:#082C6F; font-size:20px">
 <li>Extracting and separating variables from the dataset according to it types(numeric, discrete, categorical, ordinal)</li>
 <li>Re-ordering ordinal variables</li>
@@ -202,10 +207,10 @@ digraph surveillance_diagram {    # 'digraph' means 'directional graph', then th
 <li> Combining all variables for Deep Neural Network Training</li>
 </ol>
 
-## <span><a id="preprocess" style="color: #7BB6B3; text-transform: uppercase">Data Pre-processing</a></span>
-<p style = "color:#082C6F; font-size: 20px">brief outlining of this section- simply state how things are organized</p> 
-
 ### <span><a id="#" style="color: #7BB6B3;">1. Extracting and separating variables from the dataset according to its types(numeric, discrete, categorical, ordinal, and response)</a></span>
+
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px">After consulting the original documentation, I identified four distinct types of data and segmented dataset accordingly. In addition, I chose the 'Sale_price' variable as the response variable and categorized it separately. The source code below illustrate this process.</p> 
+
 ```{r,echo=TRUE, eval=TRUE, fig.align='center'}
 #Extracting Numeric Variables
 ames_numeric <- ames %>% dplyr::select(Lot_Frontage, Lot_Area, Year_Built, 
@@ -254,6 +259,8 @@ ames_response <- ames %>% dplyr::select(Sale_Price)
 
 
 ### <span><a id="#" style="color: #7BB6B3;">2. Re-ordering ordinal variables </a></span>
+<p style = "color:#082C6F; font-size: 20px;text-indent: 25px"> All ordinal variables identified in the dataset inherently contain rank order information. Since these variables were originally in string format, statistical models cannot automatically discern the intended order. Therefore, I meticulously identified the correct order for each variable using the data dictionary and redefined them accordingly. Finally, as demonstrated in the code below, all ordinal variables were converted into integer values, allowing machine learning models to properly interpret the eastablished orders.</p> 
+
 ```{r,echo=TRUE, eval=TRUE, fig.align='center'}
 #Lot_Shape
 Qual.levels <- c('Irregular', 'Moderately_Irregular', 'Slightly_Irregular','Regular')
@@ -1218,7 +1225,7 @@ knitr::include_graphics("./image/Boston_ML_DL_Performance_Comparison.png")
 <br>
 
 
-#change
+#is this update working?
 
 
 
